@@ -42,12 +42,6 @@ export default async function handler(req: any, res: any) {
         ],
         returnUrl: returnUrl,
         completionUrl: completionUrl,
-        ...(customerName && {
-          customer: {
-            name: customerName,
-            cellphone: customerPhone || undefined,
-          },
-        }),
       }),
     });
 

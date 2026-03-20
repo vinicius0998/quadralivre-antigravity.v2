@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { useParams } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { MapPin, Phone, ChevronLeft, Loader2, CalendarDays, Clock, CheckCircle2, XCircle, Calendar, Plus, Minus } from "lucide-react";
+import { MapPin, Phone, ChevronLeft, Loader2, CalendarDays, Clock, CheckCircle2, XCircle, Calendar, Plus, Minus, AlertCircle, ShieldCheck } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { Tables } from "@/integrations/supabase/types";
@@ -36,6 +36,7 @@ export default function PublicBookingPage() {
   const [clientPhone, setClientPhone] = useState("");
   const [selectedDuration, setSelectedDuration] = useState(60);
   const [observation, setObservation] = useState("");
+  const [termsAccepted, setTermsAccepted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
   // Load arena data
@@ -253,6 +254,7 @@ export default function PublicBookingPage() {
     setClientName("");
     setClientPhone("");
     setObservation("");
+    setTermsAccepted(false);
   };
 
   // Date options (next 7 days)
@@ -594,6 +596,47 @@ export default function PublicBookingPage() {
                 </div>
               </div>
 
+              {/* Avisos de política */}
+              {(() => {
+                const advPerc = (profile as any).advance_percentage ?? 0;
+                const cancelLimit = (profile as any).cancellation_limit_hours ?? 0;
+                const totalAmount = selectedCourt.price_per_hour * (selectedDuration / 60);
+                const advanceAmount = (totalAmount * advPerc) / 100;
+                const hasTerms = advPerc > 0 || cancelLimit > 0;
+
+                if (!hasTerms) return null;
+
+                return (
+                  <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 space-y-2 mb-1">
+                    <div className="flex items-center gap-2">
+                      <AlertCircle size={16} className="text-amber-500 shrink-0" />
+                      <p className="text-xs font-bold text-amber-600">Condições desta reserva</p>
+                    </div>
+                    {advPerc > 0 && (
+                      <p className="text-xs text-amber-700/90 leading-relaxed">
+                        • Esta quadra exige o pagamento de <strong>{advPerc}% (R$ {advanceAmount.toFixed(2).replace(".", ",")}) via PIX</strong> para confirmar a reserva. Você será redirecionado ao pagamento após confirmar.
+                      </p>
+                    )}
+                    {cancelLimit > 0 && (
+                      <p className="text-xs text-amber-700/90 leading-relaxed">
+                        • O cancelamento deve ser solicitado com no mínimo <strong>{cancelLimit} hora{cancelLimit > 1 ? "s" : ""} de antecedência</strong>. Cancelamentos fora deste prazo não serão aceitos.
+                      </p>
+                    )}
+                    <label className="flex items-start gap-2.5 mt-3 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={termsAccepted}
+                        onChange={(e) => setTermsAccepted(e.target.checked)}
+                        className="mt-0.5 h-4 w-4 rounded accent-amber-500 shrink-0"
+                      />
+                      <span className="text-xs text-amber-700 font-medium leading-relaxed">
+                        Li e concordo com as condições acima
+                      </span>
+                    </label>
+                  </div>
+                );
+              })()}
+
               <form onSubmit={handleSubmit} className="space-y-3">
                 <input
                   type="text"
@@ -619,12 +662,19 @@ export default function PublicBookingPage() {
                 />
                 <motion.button
                   type="submit"
-                  disabled={submitting || !clientName || !clientPhone}
+                  disabled={submitting || !clientName || !clientPhone || (
+                    ((profile as any).advance_percentage > 0 || (profile as any).cancellation_limit_hours > 0) && !termsAccepted
+                  )}
                   whileTap={{ scale: 0.98 }}
                   className="w-full rounded-xl bg-accent py-3.5 text-sm font-bold text-accent-foreground shadow-sm transition-arena hover:brightness-95 disabled:opacity-50 flex items-center justify-center gap-2"
                 >
                   {submitting ? (
                     <Loader2 size={18} className="animate-spin" />
+                  ) : (profile as any).advance_percentage > 0 ? (
+                    <>
+                      <ShieldCheck size={16} />
+                      Confirmar e pagar via PIX
+                    </>
                   ) : (
                     <>
                       <Phone size={16} />
