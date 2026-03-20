@@ -19,14 +19,15 @@ function PixPolling({ reservationId, onPaid }: { reservationId: string | null; o
   useEffect(() => {
     if (!reservationId) return;
     const interval = setInterval(async () => {
-      const { data } = await supabase
-        .from("reservations")
-        .select("status_pagamento")
-        .eq("id", reservationId)
-        .single();
-      if (data?.status_pagamento === "pago") {
-        clearInterval(interval);
-        onPaid();
+      try {
+        const response = await fetch(`/api/check-payment?reservationId=${reservationId}`);
+        const data = await response.json();
+        if (data?.paid) {
+          clearInterval(interval);
+          onPaid();
+        }
+      } catch (e) {
+        // ignora erros de rede
       }
     }, 5000);
     return () => clearInterval(interval);
@@ -749,8 +750,24 @@ export default function PublicBookingPage() {
 
               <div className="mt-4 flex items-center justify-center gap-2 text-xs text-muted-foreground">
                 <Loader2 size={14} className="animate-spin" />
-                Aguardando confirmação do pagamento...
+                Verificando pagamento automaticamente...
               </div>
+
+              <button
+                onClick={async () => {
+                  if (!pendingReservationId) return;
+                  const response = await fetch(`/api/check-payment?reservationId=${pendingReservationId}`);
+                  const data = await response.json();
+                  if (data?.paid) {
+                    setStep("done");
+                  } else {
+                    toast.info("Pagamento ainda não identificado. Tente novamente em alguns segundos.");
+                  }
+                }}
+                className="mt-3 w-full rounded-xl border border-border bg-card py-3 text-sm font-medium text-foreground transition-arena hover:bg-subtle"
+              >
+                Já paguei — verificar agora
+              </button>
 
               {/* Polling: verifica a cada 5s se o pagamento foi confirmado */}
               <PixPolling
