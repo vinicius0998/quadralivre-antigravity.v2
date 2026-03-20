@@ -3,7 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { Tables } from "@/integrations/supabase/types";
 import { toast } from "sonner";
-import { Loader2, Copy, ExternalLink, Upload, X, ImageIcon, Building2, Globe, Phone, MapPin } from "lucide-react";
+import { Loader2, Copy, ExternalLink, Upload, X, ImageIcon, Building2, Globe, Phone, Eye, EyeOff, Banknote, Key } from "lucide-react";
 
 type Profile = Tables<"profiles">;
 
@@ -18,6 +18,11 @@ export default function SettingsPage() {
   const [bannerUrl, setBannerUrl] = useState("");
   const [cancellationLimit, setCancellationLimit] = useState<number>(0);
   const [advancePercentage, setAdvancePercentage] = useState<number>(0);
+  const [abacatepayApiKey, setAbacatepayApiKey] = useState("");
+  const [pixKey, setPixKey] = useState("");
+  const [showApiKey, setShowApiKey] = useState(false);
+  const [withdrawAmount, setWithdrawAmount] = useState("");
+  const [withdrawing, setWithdrawing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
@@ -36,6 +41,8 @@ export default function SettingsPage() {
         setBannerUrl(data.banner_url ?? "");
         setCancellationLimit(data.cancellation_limit_hours ?? 0);
         setAdvancePercentage((data as any).advance_percentage ?? 0);
+        setAbacatepayApiKey((data as any).abacatepay_api_key ?? "");
+        setPixKey((data as any).pix_key ?? "");
       }
       setLoading(false);
     });
@@ -75,6 +82,8 @@ export default function SettingsPage() {
       banner_url: bannerUrl || null,
       cancellation_limit_hours: cancellationLimit,
       advance_percentage: advancePercentage,
+      abacatepay_api_key: abacatepayApiKey || null,
+      pix_key: pixKey || null,
     } as any;
 
     let error;
@@ -103,6 +112,33 @@ export default function SettingsPage() {
     
     setArenaSlug(slug);
     toast.success("Configurações salvas!");
+  };
+
+  const handleWithdraw = async () => {
+    if (!user) return;
+    const amountCents = Math.round(parseFloat(withdrawAmount) * 100);
+    if (!amountCents || amountCents <= 0) {
+      toast.error("Informe um valor válido para saque.");
+      return;
+    }
+    setWithdrawing(true);
+    const { data: sessionData } = await supabase.auth.getSession();
+    const token = sessionData?.session?.access_token;
+    if (!token) { toast.error("Sessão expirada. Faça login novamente."); setWithdrawing(false); return; }
+
+    const response = await fetch("/api/create-withdrawal", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ amountCents }),
+    });
+    const result = await response.json();
+    setWithdrawing(false);
+    if (!response.ok) {
+      toast.error(result.error || "Erro ao solicitar saque.");
+    } else {
+      toast.success("Saque solicitado! O valor será enviado para sua chave PIX em breve.");
+      setWithdrawAmount("");
+    }
   };
 
   const inputClass = "w-full rounded-xl border-0 bg-subtle px-4 py-3 text-sm text-foreground ring-1 ring-inset ring-border focus:ring-2 focus:ring-primary outline-none transition-arena min-h-[44px]";
@@ -230,15 +266,16 @@ export default function SettingsPage() {
         </div>
 
         {/* Payment Settings */}
-        <div className="md:col-span-2 rounded-2xl bg-card p-6 shadow-card space-y-4">
+        <div className="md:col-span-2 rounded-2xl bg-card p-6 shadow-card space-y-5">
           <div className="flex items-center gap-2 mb-1">
-            <Building2 size={16} className="text-primary" />
+            <Key size={16} className="text-primary" />
             <h2 className="text-sm font-bold text-foreground">Configurações de Pagamento (AbacatePay)</h2>
           </div>
+
           <div className="space-y-1.5">
             <label className="text-xs font-medium text-foreground">Percentual de adiantamento (%)</label>
-            <p className="text-[11px] text-muted-foreground mb-2">Quanto do valor total o cliente deve pagar antecipadamente para confirmar a reserva.</p>
-            <div className="flex items-center gap-3">
+            <p className="text-[11px] text-muted-foreground">Quanto do valor total o cliente paga no ato da reserva. Use 0 para desativar o pagamento online.</p>
+            <div className="flex items-center gap-3 mt-2">
               <input
                 type="number"
                 min="0"
@@ -249,9 +286,76 @@ export default function SettingsPage() {
               />
               <span className="text-sm text-foreground font-medium">%</span>
             </div>
-            <p className="text-[10px] text-muted-foreground mt-1">Ex: Se o aluguel for R$ 100 e você definir 30%, o cliente pagará R$ 30 no ato da reserva.</p>
+            <p className="text-[10px] text-muted-foreground">Ex: 30% → cliente paga R$ 30 numa reserva de R$ 100. Use 100 para cobrança total.</p>
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-foreground">API Key do AbacatePay</label>
+            <p className="text-[11px] text-muted-foreground">Encontre em <strong>app.abacatepay.com → Configurações → API Keys</strong>.</p>
+            <div className="relative mt-2">
+              <input
+                type={showApiKey ? "text" : "password"}
+                placeholder="sk_live_..."
+                value={abacatepayApiKey}
+                onChange={(e) => setAbacatepayApiKey(e.target.value)}
+                className={`${inputClass} pr-12`}
+              />
+              <button
+                type="button"
+                onClick={() => setShowApiKey(!showApiKey)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-arena"
+              >
+                {showApiKey ? <EyeOff size={16} /> : <Eye size={16} />}
+              </button>
+            </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-foreground">Chave PIX para saques</label>
+            <p className="text-[11px] text-muted-foreground">Chave PIX onde você receberá os saques da plataforma (CPF, CNPJ, e-mail, telefone ou chave aleatória).</p>
+            <input
+              type="text"
+              placeholder="Sua chave PIX"
+              value={pixKey}
+              onChange={(e) => setPixKey(e.target.value)}
+              className={`${inputClass} mt-2`}
+            />
           </div>
         </div>
+
+        {/* Withdrawal */}
+        {pixKey && abacatepayApiKey && (
+          <div className="md:col-span-2 rounded-2xl bg-card p-6 shadow-card space-y-4">
+            <div className="flex items-center gap-2 mb-1">
+              <Banknote size={16} className="text-accent" />
+              <h2 className="text-sm font-bold text-foreground">Solicitar Saque</h2>
+            </div>
+            <p className="text-[11px] text-muted-foreground">O valor será enviado para a chave PIX <strong>{pixKey}</strong>.</p>
+            <div className="flex items-center gap-3">
+              <div className="relative flex-1 max-w-[200px]">
+                <span className="absolute left-4 top-1/2 -translate-y-1/2 text-sm text-muted-foreground font-medium">R$</span>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  placeholder="0,00"
+                  value={withdrawAmount}
+                  onChange={(e) => setWithdrawAmount(e.target.value)}
+                  className={`${inputClass} pl-10`}
+                />
+              </div>
+              <button
+                type="button"
+                onClick={handleWithdraw}
+                disabled={withdrawing || !withdrawAmount}
+                className="flex items-center gap-2 rounded-xl bg-accent px-5 py-3 text-sm font-semibold text-accent-foreground shadow-sm transition-arena hover:brightness-95 disabled:opacity-50"
+              >
+                {withdrawing ? <Loader2 size={16} className="animate-spin" /> : <Banknote size={16} />}
+                Sacar
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Public Link */}
         {arenaSlug && (
