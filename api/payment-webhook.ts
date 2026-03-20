@@ -15,13 +15,13 @@ export default async function handler(req: any, res: any) {
     const eventType: string = event?.event ?? "";
     const paymentData = event?.data ?? {};
 
-    if (!["checkout.completed", "transparent.completed"].includes(eventType)) {
+    if (!["billing.paid", "checkout.completed", "transparent.completed"].includes(eventType)) {
       return res.status(200).json({ received: true });
     }
 
-    const externalId: string = paymentData?.externalId ?? paymentData?.checkout?.externalId ?? "";
-    const paymentId: string = paymentData?.id ?? paymentData?.checkout?.id ?? "";
-    const amountPaidCents: number = paymentData?.amount ?? paymentData?.checkout?.amount ?? 0;
+    const externalId: string = paymentData?.externalId ?? paymentData?.billing?.externalId ?? paymentData?.checkout?.externalId ?? "";
+    const paymentId: string = paymentData?.id ?? paymentData?.billing?.id ?? paymentData?.checkout?.id ?? "";
+    const amountPaidCents: number = paymentData?.amount ?? paymentData?.billing?.amount ?? paymentData?.checkout?.amount ?? 0;
 
     if (!externalId && !paymentId) {
       return res.status(200).json({ received: true });
