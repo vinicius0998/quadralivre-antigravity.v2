@@ -13,7 +13,26 @@ type Court = Tables<"courts">;
 type Reservation = Tables<"reservations">;
 type ScheduleConfig = Tables<"schedule_configs">;
 
-type Step = "home" | "courts" | "times" | "form" | "done" | "cancel";
+type Step = "home" | "courts" | "times" | "form" | "payment" | "done" | "cancel";
+
+function PixPolling({ reservationId, onPaid }: { reservationId: string | null; onPaid: () => void }) {
+  useEffect(() => {
+    if (!reservationId) return;
+    const interval = setInterval(async () => {
+      const { data } = await supabase
+        .from("reservations")
+        .select("status_pagamento")
+        .eq("id", reservationId)
+        .single();
+      if (data?.status_pagamento === "pago") {
+        clearInterval(interval);
+        onPaid();
+      }
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [reservationId, onPaid]);
+  return null;
+}
 
 export default function PublicBookingPage() {
   const { slug } = useParams<{ slug: string }>();
@@ -38,6 +57,9 @@ export default function PublicBookingPage() {
   const [observation, setObservation] = useState("");
   const [termsAccepted, setTermsAccepted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [pixCode, setPixCode] = useState("");
+  const [pixCopied, setPixCopied] = useState(false);
+  const [pendingReservationId, setPendingReservationId] = useState<string | null>(null);
 
   // Load arena data
   useEffect(() => {
@@ -180,7 +202,6 @@ export default function PublicBookingPage() {
     }
 
     if (advancePercentage > 0 && reservation) {
-      // Create checkout via Vercel Serverless Function
       try {
         const response = await fetch("/api/create-checkout", {
           method: "POST",
@@ -188,21 +209,19 @@ export default function PublicBookingPage() {
           body: JSON.stringify({
             reservationId: reservation.id,
             amountCents: Math.round(advanceAmount * 100),
-            customerName: clientName,
-            customerPhone: clientPhone,
-            returnUrl: window.location.href,
-            completionUrl: `${window.location.origin}/reservar/${slug}?status=success&res=${reservation.id}`,
           }),
         });
 
-        const checkout = await response.json();
-        
-        if (!response.ok || !checkout?.url) {
-          throw new Error(checkout?.error || "Erro ao gerar link de pagamento");
+        const pix = await response.json();
+
+        if (!response.ok || !pix?.brCode) {
+          throw new Error(pix?.error || "Erro ao gerar PIX");
         }
 
-        // Redirect to AbacatePay
-        window.location.href = checkout.url;
+        setPixCode(pix.brCode);
+        setPendingReservationId(reservation.id);
+        setSubmitting(false);
+        setStep("payment");
         return;
       } catch (err: any) {
         toast.error("Erro ao processar pagamento: " + err.message);
@@ -255,6 +274,9 @@ export default function PublicBookingPage() {
     setClientPhone("");
     setObservation("");
     setTermsAccepted(false);
+    setPixCode("");
+    setPixCopied(false);
+    setPendingReservationId(null);
   };
 
   // Date options (next 7 days)
@@ -683,6 +705,58 @@ export default function PublicBookingPage() {
                   )}
                 </motion.button>
               </form>
+            </motion.div>
+          )}
+
+          {/* STEP: Payment PIX */}
+          {step === "payment" && pixCode && (
+            <motion.div key="payment" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }} transition={{ duration: 0.25 }} className="py-6">
+              <div className="text-center mb-6">
+                <div className="flex h-14 w-14 items-center justify-center rounded-full bg-accent/10 mx-auto mb-3">
+                  <ShieldCheck size={28} className="text-accent" />
+                </div>
+                <h2 className="text-lg font-bold text-foreground">Pague via PIX</h2>
+                <p className="text-sm text-muted-foreground mt-1">Copie o código abaixo e pague no seu banco</p>
+              </div>
+
+              <div className="rounded-xl bg-subtle p-4 space-y-3">
+                <p className="text-[11px] text-muted-foreground text-center font-medium">PIX Copia e Cola</p>
+                <div className="rounded-lg bg-card p-3 ring-1 ring-border">
+                  <p className="text-[10px] text-muted-foreground break-all leading-relaxed font-mono select-all">{pixCode}</p>
+                </div>
+                <button
+                  onClick={() => {
+                    navigator.clipboard.writeText(pixCode);
+                    setPixCopied(true);
+                    setTimeout(() => setPixCopied(false), 3000);
+                  }}
+                  className="w-full rounded-xl bg-accent py-3 text-sm font-bold text-accent-foreground transition-arena hover:brightness-95 flex items-center justify-center gap-2"
+                >
+                  {pixCopied ? <CheckCircle2 size={16} /> : <Phone size={16} />}
+                  {pixCopied ? "Copiado!" : "Copiar código PIX"}
+                </button>
+              </div>
+
+              <div className="mt-4 rounded-xl border border-border bg-card p-4 space-y-2">
+                <p className="text-xs font-semibold text-foreground">Como pagar:</p>
+                <ol className="text-xs text-muted-foreground space-y-1 list-decimal list-inside">
+                  <li>Abra o app do seu banco</li>
+                  <li>Escolha a opção <strong>PIX Copia e Cola</strong></li>
+                  <li>Cole o código acima e confirme o pagamento</li>
+                  <li>Sua reserva será confirmada automaticamente</li>
+                </ol>
+              </div>
+
+              <div className="mt-4 flex items-center justify-center gap-2 text-xs text-muted-foreground">
+                <Loader2 size={14} className="animate-spin" />
+                Aguardando confirmação do pagamento...
+              </div>
+
+              {/* Polling: verifica a cada 5s se o pagamento foi confirmado */}
+              <PixPolling
+                reservationId={pendingReservationId}
+                onPaid={() => setStep("done")}
+              />
             </motion.div>
           )}
 
