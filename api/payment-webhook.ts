@@ -15,27 +15,60 @@ export default async function handler(req: any, res: any) {
     const eventType: string = event?.event ?? "";
     const paymentData = event?.data ?? {};
 
-    if (!["billing.paid", "checkout.completed", "transparent.completed"].includes(eventType)) {
+    const pixEvents = ["billing.paid", "pixQrCode.paid", "checkout.completed", "transparent.completed"];
+    if (!pixEvents.includes(eventType)) {
+      console.log("Evento ignorado:", eventType);
       return res.status(200).json({ received: true });
     }
 
-    const externalId: string = paymentData?.externalId ?? paymentData?.billing?.externalId ?? paymentData?.checkout?.externalId ?? "";
-    const paymentId: string = paymentData?.id ?? paymentData?.billing?.id ?? paymentData?.checkout?.id ?? "";
-    const amountPaidCents: number = paymentData?.amount ?? paymentData?.billing?.amount ?? paymentData?.checkout?.amount ?? 0;
+    // Tenta extrair externalId e paymentId de vários formatos possíveis
+    const externalId: string =
+      paymentData?.externalId ??
+      paymentData?.billing?.externalId ??
+      paymentData?.pixQrCode?.externalId ??
+      paymentData?.checkout?.externalId ?? "";
+
+    const paymentId: string =
+      paymentData?.id ??
+      paymentData?.billing?.id ??
+      paymentData?.pixQrCode?.id ??
+      paymentData?.checkout?.id ?? "";
+
+    const amountPaidCents: number =
+      paymentData?.amount ??
+      paymentData?.billing?.amount ??
+      paymentData?.pixQrCode?.amount ??
+      paymentData?.checkout?.amount ?? 0;
+
+    console.log("Webhook recebido:", eventType, "externalId:", externalId, "paymentId:", paymentId);
 
     if (!externalId && !paymentId) {
       return res.status(200).json({ received: true });
     }
 
-    // Busca a reserva pelo externalId (reservationId)
-    const { data: reservation, error } = await supabaseAdmin
-      .from("reservations")
-      .select("id, user_id, amount_paid")
-      .eq("id", externalId)
-      .single();
+    // Busca a reserva pelo externalId ou pelo payment_id
+    let reservation: any = null;
 
-    if (error || !reservation) {
-      console.warn("Reserva não encontrada:", externalId);
+    if (externalId) {
+      const { data } = await supabaseAdmin
+        .from("reservations")
+        .select("id, user_id")
+        .eq("id", externalId)
+        .maybeSingle();
+      reservation = data;
+    }
+
+    if (!reservation && paymentId) {
+      const { data } = await supabaseAdmin
+        .from("reservations")
+        .select("id, user_id")
+        .eq("payment_id", paymentId)
+        .maybeSingle();
+      reservation = data;
+    }
+
+    if (!reservation) {
+      console.warn("Reserva não encontrada. externalId:", externalId, "paymentId:", paymentId);
       return res.status(200).json({ received: true });
     }
 

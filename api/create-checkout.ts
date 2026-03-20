@@ -33,6 +33,7 @@ export default async function handler(req: any, res: any) {
         amount: amountCents,
         expiresIn: 3600,
         description: "Reserva de Quadra",
+        externalId: reservationId,
       }),
     });
 
