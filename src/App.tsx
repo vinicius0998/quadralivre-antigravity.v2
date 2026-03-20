@@ -42,5 +42,3 @@ const App = () => (
 );
 
 export default App;
-
-// Trigger commit v2
