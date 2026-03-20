@@ -15,46 +15,46 @@ export default async function handler(req: any, res: any) {
     const eventType: string = event?.event ?? "";
     const paymentData = event?.data ?? {};
 
-    // Só processa eventos de checkout/pagamento completado
     if (!["checkout.completed", "transparent.completed"].includes(eventType)) {
       return res.status(200).json({ received: true });
     }
 
     const externalId: string = paymentData?.externalId ?? paymentData?.checkout?.externalId ?? "";
     const paymentId: string = paymentData?.id ?? paymentData?.checkout?.id ?? "";
-    const amountPaid: number = paymentData?.amount ?? paymentData?.checkout?.amount ?? 0;
+    const amountPaidCents: number = paymentData?.amount ?? paymentData?.checkout?.amount ?? 0;
 
     if (!externalId && !paymentId) {
-      console.warn("Webhook sem externalId ou paymentId:", event);
       return res.status(200).json({ received: true });
     }
 
-    // Busca a reserva pelo externalId (reservationId) ou payment_id
-    let query = supabaseAdmin.from("reservations").select("id, status, user_id");
-
-    if (externalId) {
-      query = query.eq("id", externalId) as any;
-    } else {
-      query = query.eq("payment_id", paymentId) as any;
-    }
-
-    const { data: reservation, error } = await (query as any).single();
+    // Busca a reserva pelo externalId (reservationId)
+    const { data: reservation, error } = await supabaseAdmin
+      .from("reservations")
+      .select("id, user_id, amount_paid")
+      .eq("id", externalId)
+      .single();
 
     if (error || !reservation) {
-      console.warn("Reserva não encontrada para o webhook:", externalId || paymentId);
+      console.warn("Reserva não encontrada:", externalId);
       return res.status(200).json({ received: true });
     }
 
-    // Atualiza o status de pagamento
+    // Atualiza a reserva como paga
     await supabaseAdmin
       .from("reservations")
       .update({
         status_pagamento: "pago",
-        amount_paid: amountPaid / 100, // AbacatePay envia em centavos
+        amount_paid: amountPaidCents / 100,
         status: "agendado",
         payment_id: paymentId || undefined,
       })
       .eq("id", reservation.id);
+
+    // Credita o saldo da arena na plataforma
+    await supabaseAdmin.rpc("increment_balance", {
+      p_user_id: reservation.user_id,
+      p_amount_cents: amountPaidCents,
+    });
 
     return res.status(200).json({ received: true });
   } catch (error: any) {

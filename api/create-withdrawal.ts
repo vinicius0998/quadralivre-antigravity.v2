@@ -11,6 +11,11 @@ export default async function handler(req: any, res: any) {
   }
 
   try {
+    const ABACATE_API_KEY = process.env.ABACATEPAY_API_KEY;
+    if (!ABACATE_API_KEY) {
+      return res.status(500).json({ error: "Pagamentos não configurados na plataforma." });
+    }
+
     // Verifica autenticação via Bearer token (Supabase JWT do dono da arena)
     const authHeader: string = req.headers.authorization ?? "";
     const token = authHeader.replace("Bearer ", "");
@@ -19,7 +24,6 @@ export default async function handler(req: any, res: any) {
       return res.status(401).json({ error: "Token de autenticação necessário" });
     }
 
-    // Valida o token e pega o usuário
     const supabaseUser = createClient(
       process.env.SUPABASE_URL!,
       process.env.SUPABASE_ANON_KEY!,
@@ -32,16 +36,16 @@ export default async function handler(req: any, res: any) {
       return res.status(401).json({ error: "Token inválido" });
     }
 
-    const { amountCents, notes } = req.body;
+    const { amountCents } = req.body;
 
     if (!amountCents || amountCents <= 0) {
       return res.status(400).json({ error: "Valor inválido para saque" });
     }
 
-    // Busca a API key e PIX key da arena
+    // Busca saldo e chave PIX da arena
     const { data: profile, error: profError } = await supabaseAdmin
       .from("profiles")
-      .select("abacatepay_api_key, pix_key, arena_name")
+      .select("pix_key, balance_cents, arena_name")
       .eq("user_id", user.id)
       .single();
 
@@ -49,25 +53,29 @@ export default async function handler(req: any, res: any) {
       return res.status(404).json({ error: "Perfil não encontrado" });
     }
 
-    if (!profile.abacatepay_api_key) {
-      return res.status(400).json({ error: "Configure sua API key do AbacatePay nas configurações." });
-    }
-
     if (!profile.pix_key) {
       return res.status(400).json({ error: "Configure sua chave PIX nas configurações para realizar saques." });
     }
 
-    // Cria o saque no AbacatePay
+    const currentBalance = profile.balance_cents ?? 0;
+
+    if (amountCents > currentBalance) {
+      return res.status(400).json({
+        error: `Saldo insuficiente. Seu saldo disponível é R$ ${(currentBalance / 100).toFixed(2).replace(".", ",")}.`,
+      });
+    }
+
+    // Cria o saque no AbacatePay usando a chave da plataforma
     const response = await fetch("https://api.abacatepay.com/v1/withdraw/create", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${profile.abacatepay_api_key}`,
+        Authorization: `Bearer ${ABACATE_API_KEY}`,
       },
       body: JSON.stringify({
         amount: amountCents,
         pixKey: profile.pix_key,
-        notes: notes || `Saque QuadraLivre - ${profile.arena_name}`,
+        notes: `Saque QuadraLivre - ${profile.arena_name}`,
       }),
     });
 
@@ -75,10 +83,16 @@ export default async function handler(req: any, res: any) {
 
     if (!response.ok) {
       console.error("AbacatePay withdrawal error:", data);
-      return res.status(400).json({ error: data?.error || "Erro ao criar saque no AbacatePay" });
+      return res.status(400).json({ error: data?.error || "Erro ao processar saque" });
     }
 
-    return res.status(200).json(data);
+    // Debita o saldo da arena
+    await supabaseAdmin
+      .from("profiles")
+      .update({ balance_cents: currentBalance - amountCents })
+      .eq("user_id", user.id);
+
+    return res.status(200).json({ success: true, ...data });
   } catch (error: any) {
     console.error("create-withdrawal error:", error);
     return res.status(500).json({ error: error.message });

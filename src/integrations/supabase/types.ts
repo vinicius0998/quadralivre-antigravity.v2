@@ -61,8 +61,8 @@ export type Database = {
           whatsapp_phone: string | null
           cancellation_limit_hours: number | null
           advance_percentage: number | null
-          abacatepay_api_key: string | null
           pix_key: string | null
+          balance_cents: number | null
         }
         Insert: {
           address?: string | null
@@ -77,8 +77,8 @@ export type Database = {
           whatsapp_phone?: string | null
           cancellation_limit_hours?: number | null
           advance_percentage?: number | null
-          abacatepay_api_key?: string | null
           pix_key?: string | null
+          balance_cents?: number | null
         }
         Update: {
           address?: string | null
@@ -93,8 +93,8 @@ export type Database = {
           whatsapp_phone?: string | null
           cancellation_limit_hours?: number | null
           advance_percentage?: number | null
-          abacatepay_api_key?: string | null
           pix_key?: string | null
+          balance_cents?: number | null
         }
         Relationships: []
       }

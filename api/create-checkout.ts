@@ -17,34 +17,17 @@ export default async function handler(req: any, res: any) {
       return res.status(400).json({ error: "reservationId e amountCents são obrigatórios" });
     }
 
-    // Busca a reserva para pegar o user_id (dono da arena)
-    const { data: reservation, error: resError } = await supabaseAdmin
-      .from("reservations")
-      .select("id, user_id")
-      .eq("id", reservationId)
-      .single();
-
-    if (resError || !reservation) {
-      return res.status(404).json({ error: "Reserva não encontrada" });
+    const ABACATE_API_KEY = process.env.ABACATEPAY_API_KEY;
+    if (!ABACATE_API_KEY) {
+      return res.status(500).json({ error: "Pagamentos não configurados na plataforma." });
     }
 
-    // Busca a API key do AbacatePay da arena
-    const { data: profile, error: profError } = await supabaseAdmin
-      .from("profiles")
-      .select("abacatepay_api_key, arena_name")
-      .eq("user_id", reservation.user_id)
-      .single();
-
-    if (profError || !profile?.abacatepay_api_key) {
-      return res.status(400).json({ error: "Arena não configurou a API do AbacatePay ainda." });
-    }
-
-    // Cria o checkout no AbacatePay
+    // Cria o checkout no AbacatePay usando a chave da plataforma
     const response = await fetch("https://api.abacatepay.com/v1/checkouts/create", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${profile.abacatepay_api_key}`,
+        Authorization: `Bearer ${ABACATE_API_KEY}`,
       },
       body: JSON.stringify({
         items: [
