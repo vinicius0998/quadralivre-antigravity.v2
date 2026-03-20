@@ -22,25 +22,26 @@ export default async function handler(req: any, res: any) {
       return res.status(500).json({ error: "Pagamentos não configurados na plataforma." });
     }
 
-    // Cria o checkout no AbacatePay usando a chave da plataforma
-    const response = await fetch("https://api.abacatepay.com/v1/checkouts/create", {
+    // Cria o billing no AbacatePay usando a chave da plataforma
+    const response = await fetch("https://api.abacatepay.com/v1/billing/create", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${ABACATE_API_KEY}`,
       },
       body: JSON.stringify({
-        items: [
+        frequency: "ONE_TIME",
+        methods: ["PIX"],
+        products: [
           {
-            id: `reserva-${reservationId}`,
+            externalId: `reserva-${reservationId}`,
+            name: "Reserva de Quadra",
             quantity: 1,
             price: amountCents,
           },
         ],
-        externalId: reservationId,
         returnUrl: returnUrl,
         completionUrl: completionUrl,
-        methods: ["PIX"],
         ...(customerName && {
           customer: {
             name: customerName,
@@ -51,8 +52,10 @@ export default async function handler(req: any, res: any) {
     });
 
     const data = await response.json();
+    console.log("AbacatePay response:", JSON.stringify(data));
 
-    if (!data?.data?.url) {
+    const billingUrl = data?.data?.url;
+    if (!billingUrl) {
       console.error("AbacatePay error:", data);
       return res.status(400).json({ error: data?.error || "Erro ao criar cobrança no AbacatePay" });
     }
@@ -62,12 +65,12 @@ export default async function handler(req: any, res: any) {
       .from("reservations")
       .update({
         payment_id: data.data.id,
-        payment_url: data.data.url,
+        payment_url: billingUrl,
         status_pagamento: "pendente",
       })
       .eq("id", reservationId);
 
-    return res.status(200).json({ url: data.data.url, id: data.data.id });
+    return res.status(200).json({ url: billingUrl, id: data.data.id });
   } catch (error: any) {
     console.error("create-checkout error:", error);
     return res.status(500).json({ error: error.message });
