@@ -45,7 +45,7 @@ export default async function handler(req: any, res: any) {
     // Busca reserva pelo payment_id salvo no create-checkout
     const { data: reservation } = await supabaseAdmin
       .from("reservations")
-      .select("id, user_id")
+      .select("id, user_id, status_pagamento")
       .eq("payment_id", paymentId)
       .maybeSingle();
 
@@ -54,7 +54,12 @@ export default async function handler(req: any, res: any) {
       return res.status(200).json({ received: true });
     }
 
-    console.log("Reserva encontrada:", reservation.id);
+    console.log("Reserva encontrada:", reservation.id, "Status atual:", reservation.status_pagamento);
+
+    if (reservation.status_pagamento === "pago") {
+      console.log("Reserva já estava paga, ignorando webhook.");
+      return res.status(200).json({ received: true });
+    }
 
     // Atualiza reserva como paga
     const { error: updateError } = await supabaseAdmin
@@ -77,8 +82,27 @@ export default async function handler(req: any, res: any) {
         p_user_id: reservation.user_id,
         p_amount_cents: Math.max(0, amountPaidCents - ABACATEPAY_FEE_CENTS),
       });
+
+      // Registra transações no extrato
+      await supabaseAdmin.from("transactions").insert([
+        {
+          user_id: reservation.user_id,
+          amount_cents: amountPaidCents,
+          type: "pix_payment",
+          description: "Pagamento Pix",
+          related_id: paymentId
+        },
+        {
+          user_id: reservation.user_id,
+          amount_cents: -ABACATEPAY_FEE_CENTS,
+          type: "pix_fee",
+          description: "Taxa da transação",
+          related_id: paymentId
+        }
+      ]);
+      console.log("Extrato atualizado");
     } catch (rpcError) {
-      console.error("Erro no increment_balance:", rpcError);
+      console.error("Erro no increment_balance ou transactions:", rpcError);
     }
 
     return res.status(200).json({ received: true });

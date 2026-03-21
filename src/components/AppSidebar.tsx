@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { LayoutDashboard, CalendarDays, MapPin, Clock, Settings, Menu, X, LogOut, User } from "lucide-react";
+import { LayoutDashboard, CalendarDays, MapPin, Clock, Settings, Menu, X, LogOut, User, FileText } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAuth } from "@/contexts/AuthContext";
 import logo from "@/assets/quadralivre-logo.png";
@@ -10,6 +10,7 @@ const navItems = [
   { to: "/reservas", label: "Reservas", icon: CalendarDays },
   { to: "/quadras", label: "Quadras", icon: MapPin },
   { to: "/horarios", label: "Horários", icon: Clock },
+  { to: "/extrato", label: "Extrato", icon: FileText },
   { to: "/configuracoes", label: "Configurações", icon: Settings },
 ];
 

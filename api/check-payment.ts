@@ -74,8 +74,26 @@ export default async function handler(req: any, res: any) {
           p_user_id: reservation.user_id,
           p_amount_cents: Math.max(0, amountPaidCents - ABACATEPAY_FEE_CENTS),
         });
+
+        await supabaseAdmin.from("transactions").insert([
+          {
+            user_id: reservation.user_id,
+            amount_cents: amountPaidCents,
+            type: "pix_payment",
+            description: "Pagamento Pix",
+            related_id: reservation.payment_id
+          },
+          {
+            user_id: reservation.user_id,
+            amount_cents: -ABACATEPAY_FEE_CENTS,
+            type: "pix_fee",
+            description: "Taxa da transação",
+            related_id: reservation.payment_id
+          }
+        ]);
+        console.log("Extrato atualizado via check-payment");
       } catch (e) {
-        console.error("increment_balance error:", e);
+        console.error("error during increment_balance or transactions:", e);
       }
 
       return res.status(200).json({ paid: true });

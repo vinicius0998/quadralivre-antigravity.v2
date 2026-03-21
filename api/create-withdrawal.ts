@@ -102,11 +102,21 @@ export default async function handler(req: any, res: any) {
       return res.status(400).json({ error: data?.error || "Erro ao processar saque" });
     }
 
-    // Debita o saldo da arena
+    // Debita o saldo da arena e registra a transação
     await supabaseAdmin
       .from("profiles")
       .update({ balance_cents: currentBalance - amountCents })
       .eq("user_id", user.id);
+
+    await supabaseAdmin.from("transactions").insert([
+      {
+        user_id: user.id,
+        amount_cents: -amountCents,
+        type: "withdrawal",
+        description: "Saque",
+        related_id: data?.data?.id || null
+      }
+    ]);
 
     return res.status(200).json({ success: true, ...data });
   } catch (error: any) {
