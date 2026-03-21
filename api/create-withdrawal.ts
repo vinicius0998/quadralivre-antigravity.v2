@@ -65,6 +65,18 @@ export default async function handler(req: any, res: any) {
       });
     }
 
+    // Detecta o tipo da chave PIX
+    const detectPixType = (key: string): string => {
+      const cleaned = key.replace(/\D/g, "");
+      if (/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(key)) return "EMAIL";
+      if (cleaned.length === 11 && !key.includes("-")) return "CPF";
+      if (cleaned.length === 14) return "CNPJ";
+      if (key.startsWith("+") || (cleaned.length >= 10 && cleaned.length <= 11)) return "PHONE";
+      return "EVP"; // chave aleatória
+    };
+
+    const pixType = detectPixType(profile.pix_key);
+
     // Cria o saque no AbacatePay usando a chave da plataforma
     const response = await fetch("https://api.abacatepay.com/v1/withdraw/create", {
       method: "POST",
@@ -74,7 +86,10 @@ export default async function handler(req: any, res: any) {
       },
       body: JSON.stringify({
         amount: amountCents,
-        pix: profile.pix_key,
+        pix: {
+          type: pixType,
+          key: profile.pix_key,
+        },
         method: "PIX",
         notes: `Saque QuadraLivre - ${profile.arena_name}`,
       }),
