@@ -75,6 +75,7 @@ export default async function handler(req: any, res: any) {
       body: JSON.stringify({
         amount: amountCents,
         pixKey: profile.pix_key,
+        method: "PIX",
         notes: `Saque QuadraLivre - ${profile.arena_name}`,
       }),
     });
