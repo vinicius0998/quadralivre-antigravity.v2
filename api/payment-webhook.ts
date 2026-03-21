@@ -72,9 +72,10 @@ export default async function handler(req: any, res: any) {
 
     // Credita saldo da arena (não bloqueia mesmo se falhar)
     try {
+      const ABACATEPAY_FEE_CENTS = 80;
       await supabaseAdmin.rpc("increment_balance" as any, {
         p_user_id: reservation.user_id,
-        p_amount_cents: amountPaidCents,
+        p_amount_cents: Math.max(0, amountPaidCents - ABACATEPAY_FEE_CENTS),
       });
     } catch (rpcError) {
       console.error("Erro no increment_balance:", rpcError);
