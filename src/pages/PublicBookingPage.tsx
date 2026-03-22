@@ -204,7 +204,7 @@ export default function PublicBookingPage() {
       `⏰ *Horário:* ${selectedSlot.slice(0, 5)} às ${endTime.slice(0, 5)}\n\n` +
       `💳 *Pagamento:* ${paymentLabel}\n\n` +
       `_Reserva realizada via QuadraLivre_ ✅`;
-    fetch("https://n8n.loopwise.com.br/webhook-test/notification-quadralivre", {
+    fetch("https://n8n.loopwise.com.br/webhook/notification-quadralivre", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
