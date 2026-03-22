@@ -21,6 +21,15 @@ export default function ReservationsPage() {
 
   const fetchData = async () => {
     if (!user) return;
+    // Expire old manual pending reservations (15 min)
+    const expireThreshold = new Date(Date.now() - 15 * 60 * 1000).toISOString();
+    await supabase
+      .from("reservations")
+      .update({ status: "expirada" })
+      .eq("user_id", user.id)
+      .eq("status", "aguardando_confirmacao")
+      .lt("created_at", expireThreshold);
+
     const [rRes, cRes] = await Promise.all([
       supabase.from("reservations").select("*").eq("user_id", user.id).order("date", { ascending: false }),
       supabase.from("courts").select("*").eq("user_id", user.id),
@@ -54,9 +63,23 @@ export default function ReservationsPage() {
   };
 
   const statusColor = (s: string) => {
-    if (s === "agendado") return "bg-accent/10 text-accent";
-    if (s === "encerrado") return "bg-muted text-muted-foreground";
+    if (s === "agendado" || s === "confirmada") return "bg-accent/10 text-accent";
+    if (s === "encerrado" || s === "expirada") return "bg-muted text-muted-foreground";
+    if (s === "aguardando_confirmacao") return "bg-amber-500/10 text-amber-600";
     return "bg-destructive/10 text-destructive";
+  };
+
+  const statusLabel = (s: string) => {
+    const labels: Record<string, string> = {
+      agendado: "Agendado",
+      confirmada: "Confirmada",
+      cancelado: "Cancelado",
+      encerrado: "Encerrado",
+      expirada: "Expirada",
+      aguardando_confirmacao: "Aguard. confirmação",
+      aguardando_pagamento: "Aguard. pagamento",
+    };
+    return labels[s] || s;
   };
 
   const inputClass = "rounded-xl border-0 bg-subtle px-3.5 py-2.5 text-sm text-foreground ring-1 ring-inset ring-border focus:ring-2 focus:ring-primary outline-none transition-arena min-h-[44px]";
@@ -135,18 +158,42 @@ export default function ReservationsPage() {
                   </span>
                 </td>
                 <td className="px-5 py-3.5">
-                  <select
-                    value={r.status}
-                    onChange={(e) => updateStatus(r.id, e.target.value)}
-                    className={`rounded-lg px-2.5 py-1 text-xs font-semibold border-0 outline-none cursor-pointer transition-arena ${statusColor(r.status)}`}
-                  >
-                    <option value="agendado">Agendado</option>
-                    <option value="cancelado">Cancelado</option>
-                    <option value="encerrado">Encerrado</option>
-                  </select>
+                  {r.status === "aguardando_confirmacao" ? (
+                    <span className={`inline-flex items-center rounded-lg px-2.5 py-1 text-xs font-semibold ${statusColor(r.status)}`}>
+                      {statusLabel(r.status)}
+                    </span>
+                  ) : (
+                    <select
+                      value={r.status}
+                      onChange={(e) => updateStatus(r.id, e.target.value)}
+                      className={`rounded-lg px-2.5 py-1 text-xs font-semibold border-0 outline-none cursor-pointer transition-arena ${statusColor(r.status)}`}
+                    >
+                      <option value="agendado">Agendado</option>
+                      <option value="confirmada">Confirmada</option>
+                      <option value="cancelado">Cancelado</option>
+                      <option value="encerrado">Encerrado</option>
+                      <option value="expirada">Expirada</option>
+                    </select>
+                  )}
                 </td>
                 <td className="px-5 py-3.5">
                   <div className="flex items-center gap-1">
+                    {r.status === "aguardando_confirmacao" && (
+                      <>
+                        <button
+                          onClick={() => updateStatus(r.id, "confirmada")}
+                          className="rounded-lg bg-accent/10 px-2.5 py-1.5 text-xs font-semibold text-accent hover:bg-accent/20 transition-arena"
+                        >
+                          Confirmar
+                        </button>
+                        <button
+                          onClick={() => updateStatus(r.id, "cancelado")}
+                          className="rounded-lg bg-destructive/10 px-2.5 py-1.5 text-xs font-semibold text-destructive hover:bg-destructive/20 transition-arena"
+                        >
+                          Cancelar
+                        </button>
+                      </>
+                    )}
                     {r.status === "agendado" && (
                       <button
                         onClick={() => setExtraTimeTarget(r)}
@@ -192,15 +239,23 @@ export default function ReservationsPage() {
                   <p className="text-xs text-muted-foreground">{getCourtName(r.court_id)}</p>
                 </div>
               </div>
-              <select
-                value={r.status}
-                onChange={(e) => updateStatus(r.id, e.target.value)}
-                className={`rounded-lg px-2 py-1 text-[11px] font-semibold border-0 outline-none ${statusColor(r.status)}`}
-              >
-                <option value="agendado">Agendado</option>
-                <option value="cancelado">Cancelado</option>
-                <option value="encerrado">Encerrado</option>
-              </select>
+              {r.status === "aguardando_confirmacao" ? (
+                <span className={`inline-flex items-center rounded-lg px-2 py-1 text-[11px] font-semibold ${statusColor(r.status)}`}>
+                  Aguard. conf.
+                </span>
+              ) : (
+                <select
+                  value={r.status}
+                  onChange={(e) => updateStatus(r.id, e.target.value)}
+                  className={`rounded-lg px-2 py-1 text-[11px] font-semibold border-0 outline-none ${statusColor(r.status)}`}
+                >
+                  <option value="agendado">Agendado</option>
+                  <option value="confirmada">Confirmada</option>
+                  <option value="cancelado">Cancelado</option>
+                  <option value="encerrado">Encerrado</option>
+                  <option value="expirada">Expirada</option>
+                </select>
+              )}
             </div>
             <div className="flex items-center gap-4 text-xs text-muted-foreground mb-3">
               <span className="flex items-center gap-1"><Calendar size={12} /> {new Date(r.date + "T12:00").toLocaleDateString("pt-BR")}</span>
@@ -210,22 +265,39 @@ export default function ReservationsPage() {
               </span>
               <span className="rounded-md bg-subtle px-1.5 py-0.5 font-medium text-foreground">{r.sport}</span>
             </div>
-            <div className="flex items-center justify-between pt-3 border-t border-border">
-              <div className="flex items-center gap-3">
-                {r.client_phone && (
-                  <a href={`tel:${r.client_phone}`} className="flex items-center gap-1.5 text-xs text-primary font-medium">
-                    <Phone size={12} /> {r.client_phone}
-                  </a>
-                )}
-                {r.status === "agendado" && (
+            <div className="flex items-center justify-between pt-3 border-t border-border flex-wrap gap-2">
+              {r.status === "aguardando_confirmacao" ? (
+                <div className="flex items-center gap-2 flex-1">
                   <button
-                    onClick={() => setExtraTimeTarget(r)}
-                    className="flex items-center gap-1.5 text-xs text-pending font-medium"
+                    onClick={() => updateStatus(r.id, "confirmada")}
+                    className="rounded-lg bg-accent/10 px-3 py-1.5 text-xs font-semibold text-accent hover:bg-accent/20 transition-arena"
                   >
-                    <Clock size={12} /> Hora extra
+                    Confirmar
                   </button>
-                )}
-              </div>
+                  <button
+                    onClick={() => updateStatus(r.id, "cancelado")}
+                    className="rounded-lg bg-destructive/10 px-3 py-1.5 text-xs font-semibold text-destructive hover:bg-destructive/20 transition-arena"
+                  >
+                    Cancelar
+                  </button>
+                </div>
+              ) : (
+                <div className="flex items-center gap-3">
+                  {r.client_phone && (
+                    <a href={`tel:${r.client_phone}`} className="flex items-center gap-1.5 text-xs text-primary font-medium">
+                      <Phone size={12} /> {r.client_phone}
+                    </a>
+                  )}
+                  {r.status === "agendado" && (
+                    <button
+                      onClick={() => setExtraTimeTarget(r)}
+                      className="flex items-center gap-1.5 text-xs text-pending font-medium"
+                    >
+                      <Clock size={12} /> Hora extra
+                    </button>
+                  )}
+                </div>
+              )}
               <button
                 onClick={() => deleteReservation(r.id)}
                 className="flex items-center gap-1.5 text-xs text-destructive font-medium ml-auto"
