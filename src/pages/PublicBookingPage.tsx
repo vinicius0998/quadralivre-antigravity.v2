@@ -184,6 +184,27 @@ export default function PublicBookingPage() {
     setStep("form");
   };
 
+  const notifyArena = (paymentMethodUsed: string) => {
+    if (!profile || !selectedCourt || !selectedSlot) return;
+    const endTime = endTimeForSlot(selectedSlot);
+    fetch("https://n8n.loopwise.com.br/webhook-test/notification-quadralivre", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        arena_name: profile.arena_name,
+        arena_whatsapp: (profile as any).whatsapp_phone,
+        client_name: clientName,
+        client_phone: clientPhone || null,
+        court_name: selectedCourt.name,
+        date: selectedDate,
+        start_time: selectedSlot,
+        end_time: endTime,
+        sport: selectedSport || getCourtSports(selectedCourt)[0] || "Beach Tennis",
+        payment_method: paymentMethodUsed,
+      }),
+    }).catch(() => {});
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedCourt || !selectedSlot || !profile) return;
@@ -210,6 +231,7 @@ export default function PublicBookingPage() {
         payment_method: "none",
       });
       if (resError) { toast.error("Erro ao realizar reserva."); setSubmitting(false); return; }
+      notifyArena("none");
       setSubmitting(false);
       setStep("done");
       return;
@@ -236,6 +258,7 @@ export default function PublicBookingPage() {
         return;
       }
 
+      notifyArena("manual");
       setPendingReservationId(reservation.id);
       setSubmitting(false);
       setStep("manual_payment");
@@ -280,6 +303,7 @@ export default function PublicBookingPage() {
 
         setPixCode(pix.brCode);
         setPendingReservationId(reservation.id);
+        notifyArena("automatic");
         setSubmitting(false);
         setStep("payment");
         return;
@@ -309,6 +333,7 @@ export default function PublicBookingPage() {
 
     const phone = profile.whatsapp_phone?.replace(/\D/g, "") || "";
 
+    notifyArena("automatic");
     setSubmitting(false);
     setStep("done");
 
