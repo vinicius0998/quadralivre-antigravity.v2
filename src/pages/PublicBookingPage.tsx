@@ -187,6 +187,23 @@ export default function PublicBookingPage() {
   const notifyArena = (paymentMethodUsed: string) => {
     if (!profile || !selectedCourt || !selectedSlot) return;
     const endTime = endTimeForSlot(selectedSlot);
+    const dateFormatted = new Date(selectedDate + "T12:00").toLocaleDateString("pt-BR", {
+      weekday: "long", day: "numeric", month: "long", year: "numeric",
+    });
+    const paymentLabel =
+      paymentMethodUsed === "manual" ? "PIX direto — aguardando comprovante" :
+      paymentMethodUsed === "automatic" ? "PIX automático" :
+      "Sem cobrança antecipada";
+    const message =
+      `🏟️ *Nova Reserva — ${profile.arena_name}*\n\n` +
+      `👤 *Cliente:* ${clientName}\n` +
+      `📞 *Telefone:* ${clientPhone || "Não informado"}\n\n` +
+      `🎾 *Esporte:* ${selectedSport || getCourtSports(selectedCourt)[0] || "Beach Tennis"}\n` +
+      `🏟️ *Quadra:* ${selectedCourt.name}\n` +
+      `📅 *Data:* ${dateFormatted}\n` +
+      `⏰ *Horário:* ${selectedSlot.slice(0, 5)} às ${endTime.slice(0, 5)}\n\n` +
+      `💳 *Pagamento:* ${paymentLabel}\n\n` +
+      `_Reserva realizada via QuadraLivre_ ✅`;
     fetch("https://n8n.loopwise.com.br/webhook-test/notification-quadralivre", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -196,11 +213,12 @@ export default function PublicBookingPage() {
         client_name: clientName,
         client_phone: clientPhone || null,
         court_name: selectedCourt.name,
-        date: selectedDate,
-        start_time: selectedSlot,
-        end_time: endTime,
+        date: dateFormatted,
+        start_time: selectedSlot.slice(0, 5),
+        end_time: endTime.slice(0, 5),
         sport: selectedSport || getCourtSports(selectedCourt)[0] || "Beach Tennis",
         payment_method: paymentMethodUsed,
+        message,
       }),
     }).catch(() => {});
   };
