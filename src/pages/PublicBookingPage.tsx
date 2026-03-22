@@ -126,7 +126,7 @@ export default function PublicBookingPage() {
       return (endH * 60 + endM) - (startH * 60 + startM);
     })();
     const options: number[] = [];
-    for (let d = interval; d <= Math.min(maxDuration, 180); d += interval) {
+    for (let d = interval; d <= maxDuration; d += interval) {
       options.push(d);
     }
     return options.length > 0 ? options : [60];

@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
-import { Plus, CalendarDays, Clock, ArrowRight, MapPin } from "lucide-react";
+import { Plus, CalendarDays, Clock, ArrowRight, MapPin, ChevronLeft, ChevronRight } from "lucide-react";
 import { motion } from "framer-motion";
 
 import NewReservationDialog from "@/components/NewReservationDialog";
@@ -22,12 +22,13 @@ export default function DashboardPage() {
   const [scheduleConfigs, setScheduleConfigs] = useState<ScheduleConfig[]>([]);
   const [loading, setLoading] = useState(true);
   const [extraTimeTarget, setExtraTimeTarget] = useState<Reservation | null>(null);
+  const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().split("T")[0]);
 
   const today = new Date().toISOString().split("T")[0];
-  const todayDow = new Date().getDay(); // 0=Sun
+  const selectedDow = new Date(selectedDate + "T12:00").getDay(); // 0=Sun
 
   const timeSlots = useMemo(() => {
-    const todayConfigs = scheduleConfigs.filter((c) => c.day_of_week === todayDow);
+    const todayConfigs = scheduleConfigs.filter((c) => c.day_of_week === selectedDow);
     if (todayConfigs.length === 0) {
       // fallback: 06:00-23:00
       return Array.from({ length: 18 }, (_, i) => `${(i + 6).toString().padStart(2, "0")}:00`);
@@ -41,13 +42,13 @@ export default function DashboardPage() {
       slots.push(`${h.toString().padStart(2, "0")}:00`);
     }
     return slots;
-  }, [scheduleConfigs, todayDow]);
+  }, [scheduleConfigs, selectedDow]);
 
   const fetchData = async () => {
     if (!user) return;
     const [courtsRes, reservationsRes, scheduleRes] = await Promise.all([
       supabase.from("courts").select("*").eq("user_id", user.id).eq("active", true),
-      supabase.from("reservations").select("*").eq("user_id", user.id).eq("date", today),
+      supabase.from("reservations").select("*").eq("user_id", user.id).eq("date", selectedDate),
       supabase.from("schedule_configs").select("*").eq("user_id", user.id),
     ]);
     setCourts(courtsRes.data ?? []);
@@ -81,7 +82,13 @@ export default function DashboardPage() {
     return () => clearInterval(interval);
   }, [reservations, today]);
 
-  useEffect(() => { fetchData(); }, [user]);
+  useEffect(() => { fetchData(); }, [user, selectedDate]);
+
+  const navigateDay = (delta: number) => {
+    const d = new Date(selectedDate + "T12:00");
+    d.setDate(d.getDate() + delta);
+    setSelectedDate(d.toISOString().split("T")[0]);
+  };
 
   const activeCourts = courts;
   const activeReservations = reservations.filter((r) => r.status === "agendado");
@@ -116,7 +123,18 @@ export default function DashboardPage() {
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-8">
         <div>
           <h1 className="text-xl font-bold text-foreground tracking-tight">Painel</h1>
-          <p className="text-sm text-muted-foreground mt-0.5">Resumo do dia — {new Date().toLocaleDateString("pt-BR", { weekday: "long", day: "numeric", month: "long" })}</p>
+          <div className="flex items-center gap-2 mt-1">
+            <button onClick={() => navigateDay(-1)} className="flex h-7 w-7 items-center justify-center rounded-lg bg-subtle text-muted-foreground hover:bg-muted transition-arena">
+              <ChevronLeft size={15} />
+            </button>
+            <p className="text-sm text-muted-foreground capitalize">
+              {new Date(selectedDate + "T12:00").toLocaleDateString("pt-BR", { weekday: "long", day: "numeric", month: "long" })}
+              {selectedDate === today && <span className="ml-2 text-[10px] font-semibold bg-primary/10 text-primary px-1.5 py-0.5 rounded-md">Hoje</span>}
+            </p>
+            <button onClick={() => navigateDay(1)} className="flex h-7 w-7 items-center justify-center rounded-lg bg-subtle text-muted-foreground hover:bg-muted transition-arena">
+              <ChevronRight size={15} />
+            </button>
+          </div>
         </div>
         <button
           onClick={() => { setDialogPreset(undefined); setDialogOpen(true); }}
