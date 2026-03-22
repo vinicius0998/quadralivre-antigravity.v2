@@ -63,6 +63,9 @@ export type Database = {
           advance_percentage: number | null
           pix_key: string | null
           balance_cents: number | null
+          payment_method: string | null
+          manual_pix_key: string | null
+          manual_pix_receiver_name: string | null
         }
         Insert: {
           address?: string | null
@@ -79,6 +82,9 @@ export type Database = {
           advance_percentage?: number | null
           pix_key?: string | null
           balance_cents?: number | null
+          payment_method?: string | null
+          manual_pix_key?: string | null
+          manual_pix_receiver_name?: string | null
         }
         Update: {
           address?: string | null
@@ -95,6 +101,9 @@ export type Database = {
           advance_percentage?: number | null
           pix_key?: string | null
           balance_cents?: number | null
+          payment_method?: string | null
+          manual_pix_key?: string | null
+          manual_pix_receiver_name?: string | null
         }
         Relationships: []
       }
@@ -117,6 +126,7 @@ export type Database = {
           payment_url: string | null
           amount_paid: number | null
           status_pagamento: string | null
+          payment_method: string | null
         }
         Insert: {
           client_name: string
@@ -136,6 +146,7 @@ export type Database = {
           payment_url?: string | null
           amount_paid?: number | null
           status_pagamento?: string | null
+          payment_method?: string | null
         }
         Update: {
           client_name?: string
@@ -155,6 +166,7 @@ export type Database = {
           payment_url?: string | null
           amount_paid?: number | null
           status_pagamento?: string | null
+          payment_method?: string | null
         }
         Relationships: [
           {

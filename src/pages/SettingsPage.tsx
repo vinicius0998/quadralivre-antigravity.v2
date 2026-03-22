@@ -3,7 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { Tables } from "@/integrations/supabase/types";
 import { toast } from "sonner";
-import { Loader2, Copy, ExternalLink, Upload, X, ImageIcon, Building2, Globe, Phone, Banknote, Wallet } from "lucide-react";
+import { Loader2, Copy, ExternalLink, Upload, X, ImageIcon, Building2, Globe, Phone, Banknote, Wallet, Zap, HandCoins } from "lucide-react";
 
 type Profile = Tables<"profiles">;
 
@@ -20,6 +20,9 @@ export default function SettingsPage() {
   const [advancePercentage, setAdvancePercentage] = useState<number>(0);
   const [pixKey, setPixKey] = useState("");
   const [balanceCents, setBalanceCents] = useState<number>(0);
+  const [paymentMethod, setPaymentMethod] = useState<"automatic" | "manual">("automatic");
+  const [manualPixKey, setManualPixKey] = useState("");
+  const [manualPixReceiverName, setManualPixReceiverName] = useState("");
   const [withdrawAmount, setWithdrawAmount] = useState("");
   const [withdrawing, setWithdrawing] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -42,6 +45,9 @@ export default function SettingsPage() {
         setAdvancePercentage((data as any).advance_percentage ?? 0);
         setPixKey((data as any).pix_key ?? "");
         setBalanceCents((data as any).balance_cents ?? 0);
+        setPaymentMethod((data as any).payment_method ?? "automatic");
+        setManualPixKey((data as any).manual_pix_key ?? "");
+        setManualPixReceiverName((data as any).manual_pix_receiver_name ?? "");
       }
       setLoading(false);
     });
@@ -82,6 +88,9 @@ export default function SettingsPage() {
       cancellation_limit_hours: cancellationLimit,
       advance_percentage: advancePercentage,
       pix_key: pixKey || null,
+      payment_method: paymentMethod,
+      manual_pix_key: paymentMethod === "manual" ? (manualPixKey || null) : null,
+      manual_pix_receiver_name: paymentMethod === "manual" ? (manualPixReceiverName || null) : null,
     } as any;
 
     let error;
@@ -270,9 +279,73 @@ export default function SettingsPage() {
             <h2 className="text-sm font-bold text-foreground">Pagamentos</h2>
           </div>
 
+          {/* Método de pagamento */}
+          <div className="space-y-2">
+            <label className="text-xs font-medium text-foreground">Método de pagamento</label>
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => setPaymentMethod("automatic")}
+                className={`flex items-center gap-3 rounded-xl border-2 p-4 text-left transition-arena ${
+                  paymentMethod === "automatic"
+                    ? "border-primary bg-primary/5"
+                    : "border-border bg-subtle hover:border-primary/30"
+                }`}
+              >
+                <Zap size={20} className={paymentMethod === "automatic" ? "text-primary" : "text-muted-foreground"} />
+                <div>
+                  <p className={`text-xs font-bold ${paymentMethod === "automatic" ? "text-primary" : "text-foreground"}`}>Automático</p>
+                  <p className="text-[10px] text-muted-foreground">PIX via AbacatePay</p>
+                </div>
+              </button>
+              <button
+                type="button"
+                onClick={() => setPaymentMethod("manual")}
+                className={`flex items-center gap-3 rounded-xl border-2 p-4 text-left transition-arena ${
+                  paymentMethod === "manual"
+                    ? "border-accent bg-accent/5"
+                    : "border-border bg-subtle hover:border-accent/30"
+                }`}
+              >
+                <HandCoins size={20} className={paymentMethod === "manual" ? "text-accent" : "text-muted-foreground"} />
+                <div>
+                  <p className={`text-xs font-bold ${paymentMethod === "manual" ? "text-accent" : "text-foreground"}`}>Manual</p>
+                  <p className="text-[10px] text-muted-foreground">Pix direto da arena</p>
+                </div>
+              </button>
+            </div>
+          </div>
+
+          {/* Campos do PIX manual */}
+          {paymentMethod === "manual" && (
+            <div className="space-y-3 rounded-xl border border-accent/20 bg-accent/5 p-4">
+              <p className="text-[11px] text-muted-foreground">O cliente verá essas informações ao reservar e fará o PIX diretamente para você.</p>
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-foreground">Chave PIX da arena *</label>
+                <input
+                  type="text"
+                  placeholder="CPF, CNPJ, e-mail, telefone ou chave aleatória"
+                  value={manualPixKey}
+                  onChange={(e) => setManualPixKey(e.target.value)}
+                  className={inputClass}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-foreground">Nome do recebedor *</label>
+                <input
+                  type="text"
+                  placeholder="Nome que aparece no PIX"
+                  value={manualPixReceiverName}
+                  onChange={(e) => setManualPixReceiverName(e.target.value)}
+                  className={inputClass}
+                />
+              </div>
+            </div>
+          )}
+
           <div className="space-y-1.5">
             <label className="text-xs font-medium text-foreground">Percentual cobrado no ato da reserva (%)</label>
-            <p className="text-[11px] text-muted-foreground">Quanto do valor total o cliente paga ao reservar. Use 0 para desativar o pagamento online.</p>
+            <p className="text-[11px] text-muted-foreground">Quanto do valor total o cliente paga ao reservar. Use 0 para desativar o pagamento antecipado.</p>
             <div className="flex items-center gap-3 mt-2">
               <input
                 type="number"

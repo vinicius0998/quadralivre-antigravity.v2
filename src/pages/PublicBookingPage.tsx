@@ -13,7 +13,7 @@ type Court = Tables<"courts">;
 type Reservation = Tables<"reservations">;
 type ScheduleConfig = Tables<"schedule_configs">;
 
-type Step = "home" | "courts" | "times" | "form" | "payment" | "done" | "cancel";
+type Step = "home" | "courts" | "times" | "form" | "payment" | "manual_payment" | "manual_waiting" | "done" | "cancel";
 
 function PixPolling({ reservationId, onPaid }: { reservationId: string | null; onPaid: () => void }) {
   useEffect(() => {
@@ -60,6 +60,7 @@ export default function PublicBookingPage() {
   const [submitting, setSubmitting] = useState(false);
   const [pixCode, setPixCode] = useState("");
   const [pixCopied, setPixCopied] = useState(false);
+  const [manualPixCopied, setManualPixCopied] = useState(false);
   const [pendingReservationId, setPendingReservationId] = useState<string | null>(null);
 
   // Load arena data
@@ -90,16 +91,25 @@ export default function PublicBookingPage() {
     load();
   }, [slug]);
 
-  // Load reservations when court/date changes
+  // Load reservations when court/date changes (expire old manual pending first)
   useEffect(() => {
     if (!selectedCourt || !selectedDate || !profile) return;
+    const expireThreshold = new Date(Date.now() - 15 * 60 * 1000).toISOString();
     supabase
       .from("reservations")
-      .select("*")
-      .eq("court_id", selectedCourt.id)
-      .eq("date", selectedDate)
-      .in("status", ["agendado"])
-      .then(({ data }) => setReservations(data ?? []));
+      .update({ status: "expirada" })
+      .eq("user_id", profile.user_id)
+      .eq("status", "aguardando_confirmacao")
+      .lt("created_at", expireThreshold)
+      .then(() => {
+        supabase
+          .from("reservations")
+          .select("*")
+          .eq("court_id", selectedCourt.id)
+          .eq("date", selectedDate)
+          .in("status", ["agendado", "aguardando_confirmacao", "aguardando_pagamento"])
+          .then(({ data }) => setReservations(data ?? []));
+      });
   }, [selectedCourt, selectedDate, profile]);
 
   // Generate available time slots
@@ -182,7 +192,35 @@ export default function PublicBookingPage() {
     const endTime = endTimeForSlot(selectedSlot);
     const totalAmount = selectedCourt.price_per_hour * (selectedDuration / 60);
     const advancePercentage = (profile as any).advance_percentage || 0;
-    const advanceAmount = (totalAmount * advancePercentage) / 100;
+    const paymentMethod = (profile as any).payment_method || "automatic";
+    const advanceAmount = advancePercentage > 0 ? (totalAmount * advancePercentage) / 100 : totalAmount;
+
+    // Manual payment flow
+    if (paymentMethod === "manual") {
+      const { data: reservation, error: resError } = await supabase.from("reservations").insert({
+        user_id: profile.user_id,
+        court_id: selectedCourt.id,
+        client_name: clientName,
+        client_phone: clientPhone || null,
+        date: selectedDate,
+        start_time: selectedSlot,
+        end_time: endTime,
+        sport: selectedSport || getCourtSports(selectedCourt)[0] || "Beach Tennis",
+        status: "aguardando_pagamento",
+        payment_method: "manual",
+      }).select().single();
+
+      if (resError) {
+        toast.error("Erro ao realizar reserva.");
+        setSubmitting(false);
+        return;
+      }
+
+      setPendingReservationId(reservation.id);
+      setSubmitting(false);
+      setStep("manual_payment");
+      return;
+    }
 
     const { data: reservation, error: resError } = await supabase.from("reservations").insert({
       user_id: profile.user_id,
@@ -194,6 +232,7 @@ export default function PublicBookingPage() {
       end_time: endTime,
       sport: selectedSport || getCourtSports(selectedCourt)[0] || "Beach Tennis",
       status: advancePercentage > 0 ? "aguardando_pagamento" : "agendado",
+      payment_method: "automatic",
     }).select().single();
 
     if (resError) {
@@ -277,6 +316,7 @@ export default function PublicBookingPage() {
     setTermsAccepted(false);
     setPixCode("");
     setPixCopied(false);
+    setManualPixCopied(false);
     setPendingReservationId(null);
   };
 
@@ -693,6 +733,11 @@ export default function PublicBookingPage() {
                 >
                   {submitting ? (
                     <Loader2 size={18} className="animate-spin" />
+                  ) : (profile as any).payment_method === "manual" ? (
+                    <>
+                      <ShieldCheck size={16} />
+                      Confirmar e ver dados do PIX
+                    </>
                   ) : (profile as any).advance_percentage > 0 ? (
                     <>
                       <ShieldCheck size={16} />
@@ -774,6 +819,105 @@ export default function PublicBookingPage() {
                 reservationId={pendingReservationId}
                 onPaid={() => setStep("done")}
               />
+            </motion.div>
+          )}
+
+          {/* STEP: Manual Payment */}
+          {step === "manual_payment" && (
+            <motion.div key="manual_payment" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }} transition={{ duration: 0.25 }} className="py-6">
+              <div className="text-center mb-6">
+                <div className="flex h-14 w-14 items-center justify-center rounded-full bg-accent/10 mx-auto mb-3">
+                  <ShieldCheck size={28} className="text-accent" />
+                </div>
+                <h2 className="text-lg font-bold text-foreground">Pague via PIX</h2>
+                <p className="text-sm text-muted-foreground mt-1">Transfira para a chave PIX da arena abaixo</p>
+              </div>
+
+              {/* Resumo */}
+              {selectedCourt && selectedSlot && (
+                <div className="rounded-xl bg-subtle p-4 mb-4 space-y-1.5">
+                  <div className="flex justify-between">
+                    <span className="text-xs text-muted-foreground">Quadra</span>
+                    <span className="text-xs font-medium text-foreground">{selectedCourt.name}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-xs text-muted-foreground">Horário</span>
+                    <span className="text-xs font-medium text-foreground">{selectedSlot} - {endTimeForSlot(selectedSlot)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-xs text-muted-foreground">Valor a pagar</span>
+                    <span className="text-xs font-bold text-primary">
+                      R$ {(() => {
+                        const total = selectedCourt.price_per_hour * (selectedDuration / 60);
+                        const perc = (profile as any).advance_percentage || 0;
+                        return (perc > 0 ? (total * perc) / 100 : total).toFixed(2).replace(".", ",");
+                      })()}
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {/* Dados do PIX */}
+              <div className="rounded-xl bg-card ring-1 ring-border p-4 space-y-3 mb-4">
+                <div>
+                  <p className="text-[11px] text-muted-foreground font-medium mb-1">Recebedor</p>
+                  <p className="text-sm font-semibold text-foreground">{(profile as any).manual_pix_receiver_name || "—"}</p>
+                </div>
+                <div>
+                  <p className="text-[11px] text-muted-foreground font-medium mb-1">Chave PIX</p>
+                  <p className="text-sm font-mono text-foreground break-all">{(profile as any).manual_pix_key || "—"}</p>
+                </div>
+                <button
+                  onClick={() => {
+                    navigator.clipboard.writeText((profile as any).manual_pix_key || "");
+                    setManualPixCopied(true);
+                    setTimeout(() => setManualPixCopied(false), 3000);
+                  }}
+                  className="w-full rounded-xl bg-accent py-3 text-sm font-bold text-accent-foreground transition-arena hover:brightness-95 flex items-center justify-center gap-2"
+                >
+                  {manualPixCopied ? <CheckCircle2 size={16} /> : <Phone size={16} />}
+                  {manualPixCopied ? "Chave copiada!" : "Copiar chave PIX"}
+                </button>
+              </div>
+
+              <div className="rounded-xl border border-border bg-card p-4 mb-4">
+                <p className="text-xs text-muted-foreground leading-relaxed">
+                  Realize o pagamento via PIX, envie o comprovante para o WhatsApp da arena e depois clique em <strong>"Pagamento Efetuado"</strong>.
+                </p>
+              </div>
+
+              <button
+                onClick={async () => {
+                  if (!pendingReservationId) return;
+                  await supabase.from("reservations").update({ status: "aguardando_confirmacao" }).eq("id", pendingReservationId);
+                  setStep("manual_waiting");
+                }}
+                className="w-full rounded-xl bg-primary py-3.5 text-sm font-bold text-primary-foreground shadow-sm transition-arena hover:brightness-95 flex items-center justify-center gap-2"
+              >
+                <CheckCircle2 size={16} />
+                Pagamento Efetuado
+              </button>
+            </motion.div>
+          )}
+
+          {/* STEP: Manual Waiting */}
+          {step === "manual_waiting" && (
+            <motion.div key="manual_waiting" initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: 0.3 }} className="text-center py-16">
+              <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ delay: 0.1, type: "spring", stiffness: 200 }}>
+                <div className="flex h-16 w-16 items-center justify-center rounded-full bg-amber-500/10 mx-auto mb-4">
+                  <Clock size={36} className="text-amber-500" />
+                </div>
+              </motion.div>
+              <h2 className="text-xl font-bold text-foreground">Reserva enviada!</h2>
+              <p className="text-sm text-muted-foreground mt-2 max-w-xs mx-auto">
+                Aguarde a confirmação da arena. Você será notificado via WhatsApp em breve.
+              </p>
+              <button
+                onClick={handleNewReservation}
+                className="mt-6 rounded-lg bg-primary px-6 py-2.5 text-sm font-medium text-primary-foreground transition-arena hover:brightness-95"
+              >
+                Voltar ao início
+              </button>
             </motion.div>
           )}
 
