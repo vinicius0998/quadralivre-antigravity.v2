@@ -286,7 +286,7 @@ export default function SettingsPage() {
               {([
                 { value: "none", icon: Ban, label: "Sem pagamento online", desc: "Reservas são criadas sem cobrança antecipada." },
                 { value: "manual", icon: HandCoins, label: "Manual (Pix direto da arena)", desc: "O cliente recebe sua chave Pix e confirma o pagamento manualmente." },
-                { value: "automatic", icon: Zap, label: "Automático", desc: "Cobrança automática via AbacatePay (PIX QR Code)." },
+                { value: "automatic", icon: Zap, label: "Automático", desc: "Cobrança automática via PIX QR Code gerado na hora." },
               ] as const).map(({ value, icon: Icon, label, desc }) => (
                 <button
                   key={value}
