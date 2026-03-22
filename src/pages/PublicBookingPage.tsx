@@ -195,6 +195,26 @@ export default function PublicBookingPage() {
     const paymentMethod = (profile as any).payment_method || "automatic";
     const advanceAmount = advancePercentage > 0 ? (totalAmount * advancePercentage) / 100 : totalAmount;
 
+    // No payment flow
+    if (paymentMethod === "none") {
+      const { error: resError } = await supabase.from("reservations").insert({
+        user_id: profile.user_id,
+        court_id: selectedCourt.id,
+        client_name: clientName,
+        client_phone: clientPhone || null,
+        date: selectedDate,
+        start_time: selectedSlot,
+        end_time: endTime,
+        sport: selectedSport || getCourtSports(selectedCourt)[0] || "Beach Tennis",
+        status: "agendado",
+        payment_method: "none",
+      });
+      if (resError) { toast.error("Erro ao realizar reserva."); setSubmitting(false); return; }
+      setSubmitting(false);
+      setStep("done");
+      return;
+    }
+
     // Manual payment flow
     if (paymentMethod === "manual") {
       const { data: reservation, error: resError } = await supabase.from("reservations").insert({
@@ -733,6 +753,11 @@ export default function PublicBookingPage() {
                 >
                   {submitting ? (
                     <Loader2 size={18} className="animate-spin" />
+                  ) : (profile as any).payment_method === "none" ? (
+                    <>
+                      <ShieldCheck size={16} />
+                      Confirmar reserva
+                    </>
                   ) : (profile as any).payment_method === "manual" ? (
                     <>
                       <ShieldCheck size={16} />

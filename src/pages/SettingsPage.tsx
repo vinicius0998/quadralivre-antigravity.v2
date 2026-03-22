@@ -3,7 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { Tables } from "@/integrations/supabase/types";
 import { toast } from "sonner";
-import { Loader2, Copy, ExternalLink, Upload, X, ImageIcon, Building2, Globe, Phone, Banknote, Wallet, Zap, HandCoins } from "lucide-react";
+import { Loader2, Copy, ExternalLink, Upload, X, ImageIcon, Building2, Globe, Phone, Banknote, Wallet, Zap, HandCoins, Ban } from "lucide-react";
 
 type Profile = Tables<"profiles">;
 
@@ -20,7 +20,7 @@ export default function SettingsPage() {
   const [advancePercentage, setAdvancePercentage] = useState<number>(0);
   const [pixKey, setPixKey] = useState("");
   const [balanceCents, setBalanceCents] = useState<number>(0);
-  const [paymentMethod, setPaymentMethod] = useState<"automatic" | "manual">("automatic");
+  const [paymentMethod, setPaymentMethod] = useState<"automatic" | "manual" | "none">("none");
   const [manualPixKey, setManualPixKey] = useState("");
   const [manualPixReceiverName, setManualPixReceiverName] = useState("");
   const [withdrawAmount, setWithdrawAmount] = useState("");
@@ -282,37 +282,32 @@ export default function SettingsPage() {
           {/* Método de pagamento */}
           <div className="space-y-2">
             <label className="text-xs font-medium text-foreground">Método de pagamento</label>
-            <div className="grid grid-cols-2 gap-3">
-              <button
-                type="button"
-                onClick={() => setPaymentMethod("automatic")}
-                className={`flex items-center gap-3 rounded-xl border-2 p-4 text-left transition-arena ${
-                  paymentMethod === "automatic"
-                    ? "border-primary bg-primary/5"
-                    : "border-border bg-subtle hover:border-primary/30"
-                }`}
-              >
-                <Zap size={20} className={paymentMethod === "automatic" ? "text-primary" : "text-muted-foreground"} />
-                <div>
-                  <p className={`text-xs font-bold ${paymentMethod === "automatic" ? "text-primary" : "text-foreground"}`}>Automático</p>
-                  <p className="text-[10px] text-muted-foreground">PIX via AbacatePay</p>
-                </div>
-              </button>
-              <button
-                type="button"
-                onClick={() => setPaymentMethod("manual")}
-                className={`flex items-center gap-3 rounded-xl border-2 p-4 text-left transition-arena ${
-                  paymentMethod === "manual"
-                    ? "border-accent bg-accent/5"
-                    : "border-border bg-subtle hover:border-accent/30"
-                }`}
-              >
-                <HandCoins size={20} className={paymentMethod === "manual" ? "text-accent" : "text-muted-foreground"} />
-                <div>
-                  <p className={`text-xs font-bold ${paymentMethod === "manual" ? "text-accent" : "text-foreground"}`}>Manual</p>
-                  <p className="text-[10px] text-muted-foreground">Pix direto da arena</p>
-                </div>
-              </button>
+            <div className="flex flex-col gap-2">
+              {([
+                { value: "none", icon: Ban, label: "Sem pagamento online", desc: "Reservas são criadas sem cobrança antecipada." },
+                { value: "manual", icon: HandCoins, label: "Manual (Pix direto da arena)", desc: "O cliente recebe sua chave Pix e confirma o pagamento manualmente." },
+                { value: "automatic", icon: Zap, label: "Automático", desc: "Cobrança automática via AbacatePay (PIX QR Code)." },
+              ] as const).map(({ value, icon: Icon, label, desc }) => (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => setPaymentMethod(value)}
+                  className={`flex items-center gap-3 rounded-xl border-2 p-4 text-left transition-arena ${
+                    paymentMethod === value
+                      ? "border-primary bg-primary/5"
+                      : "border-border bg-subtle hover:border-primary/30"
+                  }`}
+                >
+                  <div className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2 ${paymentMethod === value ? "border-primary" : "border-border"}`}>
+                    {paymentMethod === value && <div className="h-2 w-2 rounded-full bg-primary" />}
+                  </div>
+                  <Icon size={18} className={paymentMethod === value ? "text-primary" : "text-muted-foreground"} />
+                  <div>
+                    <p className={`text-xs font-bold ${paymentMethod === value ? "text-primary" : "text-foreground"}`}>{label}</p>
+                    <p className="text-[10px] text-muted-foreground">{desc}</p>
+                  </div>
+                </button>
+              ))}
             </div>
           </div>
 
