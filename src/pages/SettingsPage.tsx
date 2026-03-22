@@ -63,7 +63,7 @@ export default function SettingsPage() {
     const ext = file.name.split(".").pop();
     const filePath = `${user.id}/banner.${ext}`;
     const { error } = await supabase.storage.from("arena-images").upload(filePath, file, { upsert: true });
-    if (error) { toast.error(`Erro ao enviar imagem: ${error.message}`); setUploading(false); return; }
+    if (error) { toast.error("Erro ao enviar imagem."); setUploading(false); return; }
     const { data: urlData } = supabase.storage.from("arena-images").getPublicUrl(filePath);
     setBannerUrl(urlData.publicUrl + "?t=" + Date.now());
     setUploading(false);
