@@ -65,6 +65,7 @@ export default function SettingsPage() {
     return { Authorization: `Bearer ${data.session?.access_token}` };
   };
 
+  // Para e limpa o intervalo de polling
   const stopPolling = () => {
     if (waPollingRef.current) {
       clearInterval(waPollingRef.current);
@@ -72,7 +73,9 @@ export default function SettingsPage() {
     }
   };
 
-  const fetchWaStatus = async () => {
+  // showToastOnConnect=true apenas durante polling ativo (após scan do QR)
+  // showToastOnConnect=false no carregamento inicial da página
+  const fetchWaStatus = async (showToastOnConnect = false) => {
     const headers = await getAuthHeader();
     const res = await fetch("/api/whatsapp-status", { headers });
     if (!res.ok) return;
@@ -81,10 +84,11 @@ export default function SettingsPage() {
     setWaStatus(isNowConnected ? "connected" : data.status === "no_instance" ? "no_instance" : "disconnected");
     setWaPhone(data.phone || null);
     if (isNowConnected) {
-      // Para o polling e limpa o QR Code quando conectado
-      stopPolling();
-      setWaQrCode(null);
-      toast.success("✅ WhatsApp conectado com sucesso!");
+      stopPolling();         // para o polling independente de qual chamada detectou
+      setWaQrCode(null);     // esconde o QR Code
+      if (showToastOnConnect) {
+        toast.success("✅ WhatsApp conectado com sucesso!");
+      }
     }
   };
 
@@ -96,7 +100,7 @@ export default function SettingsPage() {
     try {
       const headers = await getAuthHeader();
 
-      // 1. Garante instância fresca: desconecta/deleta a anterior se existir
+      // 1. Deleta instância anterior (se houver) para começar limpo
       await fetch("/api/whatsapp-disconnect", { method: "POST", headers });
 
       // 2. Cria nova instância
@@ -107,7 +111,7 @@ export default function SettingsPage() {
         return;
       }
 
-      // 3. Obtendo QR Code
+      // 3. Gera QR Code
       const connectRes = await fetch("/api/whatsapp-connect", {
         method: "POST",
         headers: { ...headers, "Content-Type": "application/json" },
@@ -129,9 +133,8 @@ export default function SettingsPage() {
         return;
       }
 
-      // 4. Polling para detectar a conexão após scan
-      setTimeout(fetchWaStatus, 2000);
-      waPollingRef.current = setInterval(fetchWaStatus, 1500);
+      // 4. Polling a cada 2s com showToastOnConnect=true (só mostra toast 1x)
+      waPollingRef.current = setInterval(() => fetchWaStatus(true), 2000);
     } finally {
       setWaLoading(false);
     }
@@ -142,7 +145,6 @@ export default function SettingsPage() {
     stopPolling();
     try {
       const headers = await getAuthHeader();
-      // Deleta a instância na uazapi e limpa o banco
       await fetch("/api/whatsapp-disconnect", { method: "POST", headers });
       setWaStatus("no_instance");
       setWaQrCode(null);
@@ -154,7 +156,7 @@ export default function SettingsPage() {
   };
 
   useEffect(() => {
-    if (user) fetchWaStatus();
+    if (user) fetchWaStatus(false); // false = sem toast no carregamento da página
     return () => stopPolling();
   }, [user]);
 
@@ -181,7 +183,6 @@ export default function SettingsPage() {
     if (!user) return;
     setSaving(true);
     const slug = arenaSlug || arenaName.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "");
-    
     const payload = {
       user_id: user.id,
       arena_name: arenaName,
@@ -207,14 +208,14 @@ export default function SettingsPage() {
       error = res.error;
     }
     setSaving(false);
-    if (error) { 
+    if (error) {
       console.error("Erro no save (profiles):", error);
       if (error.message?.includes("duplicate")) {
         toast.error("Esse slug já está em uso por outra arena.");
       } else {
         toast.error(`Erro ao salvar: ${error.message}`);
       }
-      return; 
+      return;
     }
     setArenaSlug(slug);
     toast.success("Configurações salvas!");
@@ -223,14 +224,11 @@ export default function SettingsPage() {
   const handleWithdraw = async () => {
     if (!user) return;
     const amountCents = Math.round(parseFloat(withdrawAmount) * 100);
-    if (!amountCents || amountCents <= 0) {
-      toast.error("Informe um valor válido para saque.");
-      return;
-    }
+    if (!amountCents || amountCents <= 0) { toast.error("Informe um valor válido para saque."); return; }
     setWithdrawing(true);
     const { data: sessionData } = await supabase.auth.getSession();
     const token = sessionData?.session?.access_token;
-    if (!token) { toast.error("Sessão expirada. Faça login novamente."); setWithdrawing(false); return; }
+    if (!token) { toast.error("Sessão expirada."); setWithdrawing(false); return; }
     const response = await fetch("/api/create-withdrawal", {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
@@ -327,7 +325,7 @@ export default function SettingsPage() {
             <h2 className="text-sm font-bold text-foreground">Contato</h2>
           </div>
           <div className="space-y-1.5">
-            <label className="text-xs font-medium text-foreground">WhatsApp</label>
+            <label className="text-xs font-medium text-foreground">WhatsApp do contato</label>
             <input type="tel" value={whatsappPhone} onChange={(e) => setWhatsappPhone(e.target.value)} placeholder="+5511999999999" className={inputClass} />
           </div>
           <div className="space-y-1.5">
@@ -409,7 +407,7 @@ export default function SettingsPage() {
                 className={`${inputClass} max-w-[120px]`} />
               <span className="text-sm text-foreground font-medium">%</span>
             </div>
-            <p className="text-[10px] text-muted-foreground">Ex: 30% → cliente paga R$ 30 numa reserva de R$ 100. Use 100 para cobrar o valor total.</p>
+            <p className="text-[10px] text-muted-foreground">Ex: 30% → cliente paga R$ 30 numa reserva de R$ 100.</p>
           </div>
           <div className="space-y-1.5">
             <label className="text-xs font-medium text-foreground">Chave PIX para saques</label>
@@ -425,7 +423,6 @@ export default function SettingsPage() {
             <MessageCircle size={16} className="text-[#25D366]" />
             <h2 className="text-sm font-bold text-foreground">WhatsApp da Arena</h2>
           </div>
-
           <p className="text-[11px] text-muted-foreground">
             Conecte o WhatsApp da arena para enviar notificações de reserva diretamente pela sua conta.
           </p>
@@ -445,12 +442,8 @@ export default function SettingsPage() {
                   <Wifi size={11} /> Online
                 </span>
               </div>
-              <button
-                type="button"
-                onClick={handleWaDisconnect}
-                disabled={waLoading}
-                className="flex w-full items-center justify-center gap-2 rounded-xl bg-destructive py-3 text-sm font-bold text-white shadow-sm transition-arena hover:brightness-90 disabled:opacity-50"
-              >
+              <button type="button" onClick={handleWaDisconnect} disabled={waLoading}
+                className="flex w-full items-center justify-center gap-2 rounded-xl bg-destructive py-3 text-sm font-bold text-white shadow-sm transition-arena hover:brightness-90 disabled:opacity-50">
                 {waLoading ? <Loader2 size={15} className="animate-spin" /> : <WifiOff size={15} />}
                 Desconectar e remover instância
               </button>
@@ -473,12 +466,8 @@ export default function SettingsPage() {
 
           {/* Botão conectar (quando não está conectado) */}
           {waStatus !== "connected" && (
-            <button
-              type="button"
-              onClick={handleWaConnect}
-              disabled={waLoading}
-              className="flex items-center gap-2 rounded-xl bg-[#25D366] px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition-arena hover:brightness-95 disabled:opacity-50"
-            >
+            <button type="button" onClick={handleWaConnect} disabled={waLoading}
+              className="flex items-center gap-2 rounded-xl bg-[#25D366] px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition-arena hover:brightness-95 disabled:opacity-50">
               {waLoading ? <Loader2 size={15} className="animate-spin" /> : <MessageCircle size={15} />}
               {waQrCode ? "Gerar novo QR Code" : "Conectar WhatsApp"}
             </button>
@@ -494,9 +483,7 @@ export default function SettingsPage() {
           <div className="rounded-xl bg-accent/10 px-5 py-4 flex items-center justify-between">
             <div>
               <p className="text-xs text-muted-foreground">Disponível para saque</p>
-              <p className="text-2xl font-bold text-accent mt-0.5">
-                R$ {(balanceCents / 100).toFixed(2).replace(".", ",")}
-              </p>
+              <p className="text-2xl font-bold text-accent mt-0.5">R$ {(balanceCents / 100).toFixed(2).replace(".", ",")}</p>
             </div>
             <Wallet size={32} className="text-accent/30" />
           </div>
@@ -536,8 +523,7 @@ export default function SettingsPage() {
                 onFocus={(e) => e.target.select()} />
               <button type="button" onClick={() => { navigator.clipboard.writeText(`${window.location.origin}/reservar/${arenaSlug}`); toast.success("Link copiado!"); }}
                 className="flex h-11 items-center gap-2 rounded-xl gradient-primary px-4 text-sm font-semibold text-primary-foreground shadow-md shadow-primary/20 transition-arena hover:shadow-lg shrink-0">
-                <Copy size={16} />
-                Copiar
+                <Copy size={16} /> Copiar
               </button>
               <a href={`/reservar/${arenaSlug}`} target="_blank" rel="noopener noreferrer"
                 className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-card text-muted-foreground hover:text-foreground transition-arena ring-1 ring-inset ring-border">
