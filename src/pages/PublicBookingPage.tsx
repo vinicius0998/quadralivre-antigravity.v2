@@ -90,7 +90,7 @@ export default function PublicBookingPage() {
     load();
   }, [slug]);
 
-  // Load reservations when court/date changes
+  // Load reservations when court/date changes (ignora canceladas e expiradas)
   useEffect(() => {
     if (!selectedCourt || !selectedDate || !profile) return;
     const expireThreshold = new Date(Date.now() - 15 * 60 * 1000).toISOString();
@@ -161,6 +161,38 @@ export default function PublicBookingPage() {
 
   const handleSelectSlot = (time: string) => { setSelectedSlot(time); setStep("form"); };
 
+  /**
+   * Remove reservas canceladas que conflitem com o novo horário reservado.
+   * Isso mantém a agenda limpa: quando um horário cancelado é reservado novamente,
+   * o registro antigo de cancelamento é apagado.
+   */
+  const cleanCancelledSlots = async (courtId: string, date: string, startTime: string, endTime: string) => {
+    try {
+      const { data: cancelled } = await supabase
+        .from("reservations")
+        .select("id, start_time, end_time")
+        .eq("court_id", courtId)
+        .eq("date", date)
+        .eq("status", "cancelado");
+
+      if (!cancelled || cancelled.length === 0) return;
+
+      const conflicts = cancelled.filter((r) => {
+        const rStart = r.start_time.substring(0, 5);
+        const rEnd = r.end_time.substring(0, 5);
+        return startTime < rEnd && endTime > rStart;
+      });
+
+      if (conflicts.length > 0) {
+        const idsToDelete = conflicts.map((r) => r.id);
+        await supabase.from("reservations").delete().in("id", idsToDelete);
+        console.log(`[cleanCancelledSlots] ${idsToDelete.length} cancelamento(s) removido(s) do slot ${startTime}–${endTime}`);
+      }
+    } catch (e) {
+      console.warn("[cleanCancelledSlots] Erro ao limpar:", e);
+    }
+  };
+
   const notifyArena = (paymentMethodUsed: string) => {
     if (!profile || !selectedCourt || !selectedSlot) return;
     const endTime = endTimeForSlot(selectedSlot);
@@ -186,6 +218,7 @@ export default function PublicBookingPage() {
     const paymentMethod = (profile as any).payment_method || "automatic";
     const advanceAmount = advancePercentage > 0 ? (totalAmount * advancePercentage) / 100 : totalAmount;
 
+    // Fluxo sem pagamento
     if (paymentMethod === "none") {
       const { error: resError } = await supabase.from("reservations").insert({
         user_id: profile.user_id, court_id: selectedCourt.id, client_name: clientName, client_phone: clientPhone || null,
@@ -193,9 +226,12 @@ export default function PublicBookingPage() {
         sport: selectedSport || getCourtSports(selectedCourt)[0] || "Beach Tennis", status: "agendado", payment_method: "none",
       });
       if (resError) { toast.error("Erro ao realizar reserva."); setSubmitting(false); return; }
+      // Limpa cancelamentos anteriores do mesmo horário
+      await cleanCancelledSlots(selectedCourt.id, selectedDate, selectedSlot, endTime);
       notifyArena("none"); setSubmitting(false); setStep("done"); return;
     }
 
+    // Fluxo manual (PIX da arena)
     if (paymentMethod === "manual") {
       const { data: reservation, error: resError } = await supabase.from("reservations").insert({
         user_id: profile.user_id, court_id: selectedCourt.id, client_name: clientName, client_phone: clientPhone || null,
@@ -205,6 +241,8 @@ export default function PublicBookingPage() {
       if (resError) { toast.error(`Erro ao realizar reserva: ${resError.message}`); setSubmitting(false); return; }
 
       notifyArena("manual");
+      // Limpa cancelamentos anteriores do mesmo horário
+      await cleanCancelledSlots(selectedCourt.id, selectedDate, selectedSlot, endTime);
       setPendingReservationId(reservation.id);
 
       const pixAmount = advancePercentage > 0 ? advanceAmount : totalAmount;
@@ -230,6 +268,7 @@ export default function PublicBookingPage() {
       setSubmitting(false); setStep("manual_payment"); return;
     }
 
+    // Fluxo automático (AbacatePay)
     const { data: reservation, error: resError } = await supabase.from("reservations").insert({
       user_id: profile.user_id, court_id: selectedCourt.id, client_name: clientName, client_phone: clientPhone || null,
       date: selectedDate, start_time: selectedSlot, end_time: endTime,
@@ -243,13 +282,21 @@ export default function PublicBookingPage() {
         const response = await fetch("/api/create-checkout", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reservationId: reservation.id, amountCents: Math.round(advanceAmount * 100) }) });
         const pix = await response.json();
         if (!response.ok || !pix?.brCode) throw new Error(pix?.error || "Erro ao gerar PIX");
-        setPixCode(pix.brCode); setPendingReservationId(reservation.id); notifyArena("automatic"); setSubmitting(false); setStep("payment"); return;
+        setPixCode(pix.brCode);
+        setPendingReservationId(reservation.id);
+        notifyArena("automatic");
+        // Limpa cancelamentos anteriores do mesmo horário
+        await cleanCancelledSlots(selectedCourt.id, selectedDate, selectedSlot, endTime);
+        setSubmitting(false); setStep("payment"); return;
       } catch (err: any) { toast.error("Erro ao processar pagamento: " + err.message); setSubmitting(false); return; }
     }
 
+    // Sem antecipação — reserva direta
+    notifyArena("automatic");
+    await cleanCancelledSlots(selectedCourt.id, selectedDate, selectedSlot, endTime);
+    setSubmitting(false); setStep("done");
     const dateFormatted = new Date(selectedDate + "T12:00:00").toLocaleDateString("pt-BR", { weekday: "long", day: "numeric", month: "long" });
     const phone = profile.whatsapp_phone?.replace(/\D/g, "") || "";
-    notifyArena("automatic"); setSubmitting(false); setStep("done");
     if (phone) window.open(`https://wa.me/${phone}?text=${encodeURIComponent(`🏐 *Nova Reserva – ${profile.arena_name}*\n\n👤 Cliente: ${clientName}\n📞 Telefone: ${clientPhone || "Não informado"}\n🏟️ Quadra: ${selectedCourt.name}\n🏅 Esporte: ${selectedSport}\n📅 Data: ${dateFormatted}\n⏰ Horário: ${selectedSlot} - ${endTime}\n${observation ? `📝 Obs: ${observation}\n` : ""}\n✅ Reserva solicitada via QuadraLivre`)}`, "_blank");
   };
 
