@@ -30,35 +30,35 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(400).json({ error: "Missing required fields" });
   }
 
-  // Buscar o token da instância uazapi da arena específica
-  let token: string | null = null;
+  // Buscar o token da instância WhatsApp da arena específica
+  let instanceToken: string | null = null;
+
   if (arenaUserId) {
     const { data: profile } = await supabase
       .from("profiles")
       .select("uazapi_token")
       .eq("user_id", arenaUserId)
       .single();
-    token = profile?.uazapi_token ?? null;
+    instanceToken = profile?.uazapi_token ?? null;
   }
 
-  // Fallback para o token global da plataforma (legado)
-  if (!token) {
-    token = process.env.UAZAPI_TOKEN ?? null;
-  }
-
-  if (!token) {
-    return res.status(500).json({ error: "Nenhum token WhatsApp configurado" });
+  if (!instanceToken) {
+    // Arena sem WhatsApp conectado: não envia mensagem, mas não quebra o fluxo de reserva
+    console.warn(`[send-pix-request] Arena ${arenaUserId} não tem WhatsApp conectado. Mensagem PIX não enviada.`);
+    return res.status(200).json({ success: false, reason: "no_whatsapp_instance" });
   }
 
   const pixType = detectPixType(pixKey);
   const number = formatPhone(clientPhone);
   const text = `Reserva ${courtName || "Quadra"} — ${arenaName || "Arena"}`;
 
+  console.log(`[send-pix-request] Enviando PIX via WhatsApp da arena (token: ...${instanceToken.slice(-6)}) para ${number}`);
+
   const response = await fetch("https://genialchat.uazapi.com/send/request-payment", {
     method: "POST",
     headers: {
       Accept: "application/json",
-      token,
+      token: instanceToken,
       "Content-Type": "application/json",
     },
     body: JSON.stringify({ number, amount, text, pixKey, pixType }),
@@ -67,7 +67,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const result = await response.json();
 
   if (!response.ok) {
-    console.error("uazapi error:", result);
+    console.error("[send-pix-request] uazapi error:", result);
     return res.status(500).json({ error: result?.message || "Erro ao enviar requisição PIX" });
   }
 
