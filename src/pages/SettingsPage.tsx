@@ -99,6 +99,7 @@ export default function SettingsPage() {
         headers: { ...headers, "Content-Type": "application/json" },
       });
       const connectData = await connectRes.json();
+      console.log("[WA Connect] response:", connectData);
 
       const qr = connectData.qrcode || connectData.qr || connectData.QRCode || connectData.base64;
       if (qr) {
@@ -108,7 +109,10 @@ export default function SettingsPage() {
         toast.success("WhatsApp já está conectado!");
         return;
       } else {
-        toast.error("QR Code não retornado. Tente novamente.");
+        // Mostra dica de debug baseado nos campos retornados
+        const hint = connectData._debug || JSON.stringify(Object.keys(connectData._raw || connectData));
+        toast.error(`QR Code não retornado. [${hint}] Tente novamente.`);
+        console.warn("[WA Connect] full raw response:", connectData);
         return;
       }
 
