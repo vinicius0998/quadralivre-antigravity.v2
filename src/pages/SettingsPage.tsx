@@ -70,12 +70,14 @@ export default function SettingsPage() {
     const res = await fetch("/api/whatsapp-status", { headers });
     if (!res.ok) return;
     const data = await res.json();
-    setWaStatus(data.connected ? "connected" : data.status === "no_instance" ? "no_instance" : "disconnected");
+    const isNowConnected = data.connected;
+    setWaStatus(isNowConnected ? "connected" : data.status === "no_instance" ? "no_instance" : "disconnected");
     setWaPhone(data.phone || null);
-    if (data.connected && waPollingRef.current) {
+    if (isNowConnected && waPollingRef.current) {
       clearInterval(waPollingRef.current);
       waPollingRef.current = null;
       setWaQrCode(null);
+      toast.success("✅ WhatsApp conectado com sucesso!");
     }
   };
 
@@ -99,7 +101,6 @@ export default function SettingsPage() {
         headers: { ...headers, "Content-Type": "application/json" },
       });
       const connectData = await connectRes.json();
-      console.log("[WA Connect] response:", connectData);
 
       const qr = connectData.qrcode || connectData.qr || connectData.QRCode || connectData.base64;
       if (qr) {
@@ -109,16 +110,16 @@ export default function SettingsPage() {
         toast.success("WhatsApp já está conectado!");
         return;
       } else {
-        // Mostra dica de debug baseado nos campos retornados
         const hint = connectData._debug || JSON.stringify(Object.keys(connectData._raw || connectData));
         toast.error(`QR Code não retornado. [${hint}] Tente novamente.`);
-        console.warn("[WA Connect] full raw response:", connectData);
         return;
       }
 
-      // 3. Polling para detectar conexão
+      // 3. Polling para detectar conexão — verifica imediatamente e depois a cada 1,5s
       if (waPollingRef.current) clearInterval(waPollingRef.current);
-      waPollingRef.current = setInterval(fetchWaStatus, 3000);
+      // Primeira verificação após 2s (tempo para o WA processar o scan)
+      setTimeout(fetchWaStatus, 2000);
+      waPollingRef.current = setInterval(fetchWaStatus, 1500);
     } finally {
       setWaLoading(false);
     }
