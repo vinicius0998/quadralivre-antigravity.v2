@@ -34,14 +34,33 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   });
 
   const result = await response.json();
+  console.log("[whatsapp-status] raw response:", JSON.stringify(result));
 
   if (!response.ok) {
     return res.status(200).json({ connected: false, status: "error", raw: result });
   }
 
-  // uazapi retorna diferentes campos dependendo da versão
-  const status = result.status || result.state || result.Status || "";
-  const connected = status === "open" || status === "connected" || status === "CONNECTED";
+  // Estrutura correta da uazapi:
+  // result.instance.status = "connected" | "connecting" | "disconnected"
+  // result.status.connected = true | false
+  // result.status.loggedIn = true | false
+  const instanceStatus: string = result?.instance?.status ?? "";
+  const statusConnected: boolean = result?.status?.connected === true;
+  const statusLoggedIn: boolean = result?.status?.loggedIn === true;
 
-  return res.status(200).json({ connected, status, phone: result.phone || result.wid || null, raw: result });
+  const connected = statusConnected || statusLoggedIn || instanceStatus === "connected";
+  const state = instanceStatus || (connected ? "connected" : "disconnected");
+
+  // Número do telefone
+  const phone =
+    result?.status?.jid ||
+    result?.instance?.profileName ||
+    null;
+
+  return res.status(200).json({
+    connected,
+    status: state,
+    phone,
+    raw: result,
+  });
 }
