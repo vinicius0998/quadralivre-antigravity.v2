@@ -959,7 +959,7 @@ export default function PublicBookingPage() {
               {/* Botão WhatsApp da arena */}
               {(profile as any).whatsapp_phone && (
                 <a
-                  href={`https://wa.me/${((profile as any).whatsapp_phone as string).replace(/\D/g, "")}?text=${encodeURIComponent(`Olá! Acabei de fazer uma reserva na ${profile.arena_name} e quero enviar o comprovante do PIX.`)}`}
+                  href={`https://wa.me/${((profile as any).whatsapp_phone as string).replace(/\D/g, "")}`}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="w-full rounded-xl bg-[#25D366] py-3.5 text-sm font-bold text-white shadow-sm transition-arena hover:brightness-95 flex items-center justify-center gap-2 mb-3"
