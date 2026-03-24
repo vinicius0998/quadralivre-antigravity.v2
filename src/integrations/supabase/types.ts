@@ -66,6 +66,8 @@ export type Database = {
           payment_method: string | null
           manual_pix_key: string | null
           manual_pix_receiver_name: string | null
+          uazapi_token: string | null
+          uazapi_instance_name: string | null
         }
         Insert: {
           address?: string | null
@@ -85,6 +87,8 @@ export type Database = {
           payment_method?: string | null
           manual_pix_key?: string | null
           manual_pix_receiver_name?: string | null
+          uazapi_token?: string | null
+          uazapi_instance_name?: string | null
         }
         Update: {
           address?: string | null
@@ -104,6 +108,8 @@ export type Database = {
           payment_method?: string | null
           manual_pix_key?: string | null
           manual_pix_receiver_name?: string | null
+          uazapi_token?: string | null
+          uazapi_instance_name?: string | null
         }
         Relationships: []
       }
