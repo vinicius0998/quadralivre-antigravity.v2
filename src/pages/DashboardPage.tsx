@@ -62,9 +62,10 @@ export default function DashboardPage() {
     setLoading(false);
   };
 
+  // FIX: 'agendado' é o status correto após confirmação manual pelo dono da arena
   const handleConfirm = async (id: string) => {
     setConfirmingId(id);
-    await supabase.from("reservations").update({ status: "confirmada" }).eq("id", id);
+    await supabase.from("reservations").update({ status: "agendado" }).eq("id", id);
     setConfirmingId(null);
     fetchData();
   };
@@ -131,10 +132,14 @@ export default function DashboardPage() {
 
   const courtColors = ["bg-primary/10 text-primary", "bg-accent/10 text-accent", "bg-pending/10 text-pending", "bg-destructive/10 text-destructive"];
 
+  // FIX: statusLabel agora reconhece todos os status possíveis
   const statusLabel = (s: string) => {
     if (s === "agendado") return { text: "🟢 Agendado", cls: "bg-accent/15 text-accent" };
     if (s === "encerrado") return { text: "⏹ Encerrado", cls: "bg-muted text-muted-foreground" };
-    return { text: "✕ Cancelado", cls: "bg-destructive/15 text-destructive" };
+    if (s === "aguardando_confirmacao") return { text: "⏳ Aguard. confirmação", cls: "bg-amber-500/15 text-amber-600" };
+    if (s === "aguardando_pagamento") return { text: "💳 Aguard. pagamento", cls: "bg-blue-500/15 text-blue-600" };
+    if (s === "cancelado" || s === "expirada") return { text: "✕ Cancelado", cls: "bg-destructive/15 text-destructive" };
+    return { text: s, cls: "bg-muted text-muted-foreground" };
   };
 
   return (
@@ -303,6 +308,8 @@ export default function DashboardPage() {
                                   ? "bg-accent/8 border border-accent/20"
                                   : reservation.status === "encerrado"
                                   ? "bg-muted/50 border border-border"
+                                  : reservation.status === "aguardando_confirmacao" || reservation.status === "aguardando_pagamento"
+                                  ? "bg-amber-50 border border-amber-200 dark:bg-amber-950/20 dark:border-amber-900/40"
                                   : "bg-destructive/5 border border-destructive/15 opacity-60"
                               }`}
                               onClick={() => reservation.status === "agendado" && setExtraTimeTarget(reservation)}
