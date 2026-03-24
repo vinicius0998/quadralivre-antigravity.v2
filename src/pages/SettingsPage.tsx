@@ -3,7 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { Tables } from "@/integrations/supabase/types";
 import { toast } from "sonner";
-import { Loader2, Copy, ExternalLink, Upload, X, ImageIcon, Building2, Globe, Phone, Banknote, Wallet, Zap, HandCoins, Ban } from "lucide-react";
+import { Loader2, Copy, ExternalLink, Upload, X, ImageIcon, Building2, Globe, Phone, Banknote, Wallet, Zap, HandCoins, Ban, MessageCircle, Wifi, WifiOff, QrCode, RefreshCw } from "lucide-react";
 
 type Profile = Tables<"profiles">;
 
@@ -30,6 +30,13 @@ export default function SettingsPage() {
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // WhatsApp
+  const [waStatus, setWaStatus] = useState<"unknown" | "connected" | "disconnected" | "no_instance">("unknown");
+  const [waPhone, setWaPhone] = useState<string | null>(null);
+  const [waQrCode, setWaQrCode] = useState<string | null>(null);
+  const [waLoading, setWaLoading] = useState(false);
+  const waPollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
   useEffect(() => {
     if (!user) return;
     supabase.from("profiles").select("*").eq("user_id", user.id).single().then(({ data }) => {
@@ -51,6 +58,86 @@ export default function SettingsPage() {
       }
       setLoading(false);
     });
+  }, [user]);
+
+  const getAuthHeader = async () => {
+    const { data } = await supabase.auth.getSession();
+    return { Authorization: `Bearer ${data.session?.access_token}` };
+  };
+
+  const fetchWaStatus = async () => {
+    const headers = await getAuthHeader();
+    const res = await fetch("/api/whatsapp-status", { headers });
+    if (!res.ok) return;
+    const data = await res.json();
+    setWaStatus(data.connected ? "connected" : data.status === "no_instance" ? "no_instance" : "disconnected");
+    setWaPhone(data.phone || null);
+    if (data.connected && waPollingRef.current) {
+      clearInterval(waPollingRef.current);
+      waPollingRef.current = null;
+      setWaQrCode(null);
+    }
+  };
+
+  const handleWaConnect = async () => {
+    setWaLoading(true);
+    setWaQrCode(null);
+    try {
+      const headers = await getAuthHeader();
+
+      // 1. Criar instância se não existir
+      const createRes = await fetch("/api/whatsapp-create-instance", { method: "POST", headers });
+      if (!createRes.ok) {
+        const err = await createRes.json();
+        toast.error(err.error || "Erro ao criar instância");
+        return;
+      }
+
+      // 2. Conectar e obter QR Code
+      const connectRes = await fetch("/api/whatsapp-connect", {
+        method: "POST",
+        headers: { ...headers, "Content-Type": "application/json" },
+      });
+      const connectData = await connectRes.json();
+
+      const qr = connectData.qrcode || connectData.qr || connectData.QRCode || connectData.base64;
+      if (qr) {
+        setWaQrCode(qr.startsWith("data:") ? qr : `data:image/png;base64,${qr}`);
+      } else if (connectData.status === "open" || connectData.connected) {
+        setWaStatus("connected");
+        toast.success("WhatsApp já está conectado!");
+        return;
+      } else {
+        toast.error("QR Code não retornado. Tente novamente.");
+        return;
+      }
+
+      // 3. Polling para detectar conexão
+      if (waPollingRef.current) clearInterval(waPollingRef.current);
+      waPollingRef.current = setInterval(fetchWaStatus, 3000);
+    } finally {
+      setWaLoading(false);
+    }
+  };
+
+  const handleWaDisconnect = async () => {
+    setWaLoading(true);
+    try {
+      const headers = await getAuthHeader();
+      await fetch("/api/whatsapp-disconnect", { method: "POST", headers });
+      setWaStatus("disconnected");
+      setWaQrCode(null);
+      setWaPhone(null);
+      if (waPollingRef.current) { clearInterval(waPollingRef.current); waPollingRef.current = null; }
+      toast.success("WhatsApp desconectado.");
+    } finally {
+      setWaLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (user) fetchWaStatus();
+    return () => { if (waPollingRef.current) clearInterval(waPollingRef.current); };
   }, [user]);
 
   const handleUploadImage = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -96,11 +183,9 @@ export default function SettingsPage() {
     let error;
     
     if (profile?.id) {
-      // Se o perfil já existe (carregado no useEffect), fazemos UPDATE pelo ID
       const res = await supabase.from("profiles").update(payload).eq("id", profile.id);
       error = res.error;
     } else {
-      // Falback para upsert
       const res = await supabase.from("profiles").upsert(payload, { onConflict: "user_id" });
       error = res.error;
     }
@@ -279,7 +364,6 @@ export default function SettingsPage() {
             <h2 className="text-sm font-bold text-foreground">Pagamentos</h2>
           </div>
 
-          {/* Método de pagamento */}
           <div className="space-y-2">
             <label className="text-xs font-medium text-foreground">Método de pagamento</label>
             <div className="flex flex-col gap-2">
@@ -311,7 +395,6 @@ export default function SettingsPage() {
             </div>
           </div>
 
-          {/* Campos do PIX manual */}
           {paymentMethod === "manual" && (
             <div className="space-y-3 rounded-xl border border-accent/20 bg-accent/5 p-4">
               <p className="text-[11px] text-muted-foreground">O cliente verá essas informações ao reservar e fará o PIX diretamente para você.</p>
@@ -366,6 +449,65 @@ export default function SettingsPage() {
               className={`${inputClass} mt-2`}
             />
           </div>
+        </div>
+
+        {/* WhatsApp */}
+        <div className="md:col-span-2 rounded-2xl bg-card p-6 shadow-card space-y-4">
+          <div className="flex items-center justify-between mb-1">
+            <div className="flex items-center gap-2">
+              <MessageCircle size={16} className="text-[#25D366]" />
+              <h2 className="text-sm font-bold text-foreground">WhatsApp da Arena</h2>
+            </div>
+            {waStatus === "connected" && (
+              <span className="flex items-center gap-1.5 rounded-full bg-[#25D366]/10 px-2.5 py-1 text-[11px] font-semibold text-[#25D366]">
+                <Wifi size={11} /> Conectado{waPhone ? ` · ${waPhone}` : ""}
+              </span>
+            )}
+            {waStatus === "disconnected" && (
+              <span className="flex items-center gap-1.5 rounded-full bg-destructive/10 px-2.5 py-1 text-[11px] font-semibold text-destructive">
+                <WifiOff size={11} /> Desconectado
+              </span>
+            )}
+          </div>
+
+          <p className="text-[11px] text-muted-foreground">
+            Conecte o WhatsApp da arena para enviar notificações de reserva diretamente pela sua conta.
+          </p>
+
+          {waQrCode && waStatus !== "connected" && (
+            <div className="flex flex-col items-center gap-3 rounded-xl border border-border bg-subtle p-5">
+              <div className="flex items-center gap-2 text-xs font-medium text-foreground">
+                <QrCode size={14} className="text-primary" />
+                Escaneie com o WhatsApp
+              </div>
+              <img src={waQrCode} alt="QR Code WhatsApp" className="w-52 h-52 rounded-xl" />
+              <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground animate-pulse">
+                <RefreshCw size={11} /> Aguardando conexão...
+              </div>
+            </div>
+          )}
+
+          {waStatus === "connected" ? (
+            <button
+              type="button"
+              onClick={handleWaDisconnect}
+              disabled={waLoading}
+              className="flex items-center gap-2 rounded-xl border border-destructive/30 px-5 py-2.5 text-sm font-semibold text-destructive hover:bg-destructive/5 transition-arena disabled:opacity-50"
+            >
+              {waLoading ? <Loader2 size={15} className="animate-spin" /> : <WifiOff size={15} />}
+              Desconectar WhatsApp
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={handleWaConnect}
+              disabled={waLoading || waStatus === "unknown"}
+              className="flex items-center gap-2 rounded-xl bg-[#25D366] px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition-arena hover:brightness-95 disabled:opacity-50"
+            >
+              {waLoading ? <Loader2 size={15} className="animate-spin" /> : <MessageCircle size={15} />}
+              {waQrCode ? "Recarregar QR Code" : "Conectar WhatsApp"}
+            </button>
+          )}
         </div>
 
         {/* Saldo e Saque */}
