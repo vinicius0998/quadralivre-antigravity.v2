@@ -60,9 +60,7 @@ export default function PublicBookingPage() {
   const [submitting, setSubmitting] = useState(false);
   const [pixCode, setPixCode] = useState("");
   const [pixCopied, setPixCopied] = useState(false);
-  const [manualPixCopied, setManualPixCopied] = useState(false);
   const [manualAmount, setManualAmount] = useState(0);
-  const [pixRequestSent, setPixRequestSent] = useState(false);
   const [pendingReservationId, setPendingReservationId] = useState<string | null>(null);
 
   // Load arena data
@@ -268,7 +266,7 @@ export default function PublicBookingPage() {
         start_time: selectedSlot,
         end_time: endTime,
         sport: selectedSport || getCourtSports(selectedCourt)[0] || "Beach Tennis",
-        status: "aguardando_pagamento",
+        status: "aguardando_confirmacao",
         payment_method: "manual",
       }).select().single();
 
@@ -296,7 +294,6 @@ export default function PublicBookingPage() {
             courtName: selectedCourt.name,
           }),
         })
-          .then((r) => r.ok && setPixRequestSent(true))
           .catch(() => {});
       }
 
@@ -914,103 +911,67 @@ export default function PublicBookingPage() {
 
           {/* STEP: Manual Payment */}
           {step === "manual_payment" && (
-            <motion.div key="manual_payment" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }} transition={{ duration: 0.25 }} className="py-6">
+            <motion.div key="manual_payment" initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: 0.3 }} className="py-8">
+              {/* Ícone + título */}
               <div className="text-center mb-6">
-                <div className="flex h-14 w-14 items-center justify-center rounded-full bg-accent/10 mx-auto mb-3">
-                  <ShieldCheck size={28} className="text-accent" />
-                </div>
-                <h2 className="text-lg font-bold text-foreground">Pague via PIX</h2>
-                <p className="text-sm text-muted-foreground mt-1">Transfira para a chave PIX da arena abaixo</p>
+                <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ delay: 0.1, type: "spring", stiffness: 200 }}>
+                  <div className="flex h-16 w-16 items-center justify-center rounded-full bg-accent/10 mx-auto mb-4">
+                    <CheckCircle2 size={36} className="text-accent" />
+                  </div>
+                </motion.div>
+                <h2 className="text-xl font-bold text-foreground">Reserva registrada!</h2>
+                <p className="text-sm text-muted-foreground mt-1 max-w-xs mx-auto">
+                  Sua reserva está aguardando o pagamento via PIX.
+                </p>
               </div>
 
               {/* Resumo */}
               {selectedCourt && selectedSlot && (
-                <div className="rounded-xl bg-subtle p-4 mb-4 space-y-1.5">
+                <div className="rounded-xl bg-subtle p-4 mb-5 space-y-1.5">
                   <div className="flex justify-between">
                     <span className="text-xs text-muted-foreground">Quadra</span>
                     <span className="text-xs font-medium text-foreground">{selectedCourt.name}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-xs text-muted-foreground">Horário</span>
-                    <span className="text-xs font-medium text-foreground">{selectedSlot} - {endTimeForSlot(selectedSlot)}</span>
+                    <span className="text-xs font-medium text-foreground">{selectedSlot} – {endTimeForSlot(selectedSlot)}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-xs text-muted-foreground">Valor a pagar</span>
-                    <span className="text-xs font-bold text-primary">
-                      R$ {manualAmount.toFixed(2).replace(".", ",")}
-                    </span>
+                    <span className="text-xs text-muted-foreground">Valor</span>
+                    <span className="text-xs font-bold text-primary">R$ {manualAmount.toFixed(2).replace(".", ",")}</span>
                   </div>
                 </div>
               )}
 
-              {/* Aviso WhatsApp PIX */}
-              {pixRequestSent && (
-                <div className="rounded-xl border border-accent/30 bg-accent/5 p-4 mb-4 flex items-start gap-3">
-                  <CheckCircle2 size={16} className="text-accent mt-0.5 shrink-0" />
-                  <p className="text-xs text-accent-foreground leading-relaxed">
-                    Enviamos uma <strong>solicitação de pagamento PIX</strong> no seu WhatsApp com o valor já preenchido. Confirme por lá ou use a chave abaixo.
-                  </p>
-                </div>
-              )}
-
-              {/* Dados do PIX */}
-              <div className="rounded-xl bg-card ring-1 ring-border p-4 space-y-3 mb-4">
-                <div>
-                  <p className="text-[11px] text-muted-foreground font-medium mb-1">Recebedor</p>
-                  <p className="text-sm font-semibold text-foreground">{(profile as any).manual_pix_receiver_name || "—"}</p>
-                </div>
-                <div>
-                  <p className="text-[11px] text-muted-foreground font-medium mb-1">Chave PIX</p>
-                  <p className="text-sm font-mono text-foreground break-all">{(profile as any).manual_pix_key || "—"}</p>
-                </div>
-                <button
-                  onClick={() => {
-                    navigator.clipboard.writeText((profile as any).manual_pix_key || "");
-                    setManualPixCopied(true);
-                    setTimeout(() => setManualPixCopied(false), 3000);
-                  }}
-                  className="w-full rounded-xl bg-accent py-3 text-sm font-bold text-accent-foreground transition-arena hover:brightness-95 flex items-center justify-center gap-2"
-                >
-                  {manualPixCopied ? <CheckCircle2 size={16} /> : <Phone size={16} />}
-                  {manualPixCopied ? "Chave copiada!" : "Copiar chave PIX"}
-                </button>
-              </div>
-
-              <div className="rounded-xl border border-border bg-card p-4 mb-4">
+              {/* Instrução principal */}
+              <div className="rounded-xl border-2 border-accent/30 bg-accent/5 p-5 mb-5 text-center">
+                <p className="text-sm font-semibold text-foreground mb-1">
+                  📲 Verifique seu WhatsApp
+                </p>
                 <p className="text-xs text-muted-foreground leading-relaxed">
-                  Realize o pagamento via PIX, envie o comprovante para o WhatsApp da arena e depois clique em <strong>"Pagamento Efetuado"</strong>.
+                  Enviamos uma <strong>solicitação de pagamento PIX</strong> com o valor já preenchido. Pague por lá e envie o comprovante para a arena.
+                </p>
+                <p className="text-xs text-muted-foreground mt-2 leading-relaxed">
+                  Sua reserva será <strong>confirmada após o pagamento</strong>.
                 </p>
               </div>
 
-              <button
-                onClick={async () => {
-                  if (!pendingReservationId) return;
-                  await supabase.from("reservations").update({ status: "aguardando_confirmacao" }).eq("id", pendingReservationId);
-                  setStep("manual_waiting");
-                }}
-                className="w-full rounded-xl bg-primary py-3.5 text-sm font-bold text-primary-foreground shadow-sm transition-arena hover:brightness-95 flex items-center justify-center gap-2"
-              >
-                <CheckCircle2 size={16} />
-                Pagamento Efetuado
-              </button>
-            </motion.div>
-          )}
+              {/* Botão WhatsApp da arena */}
+              {(profile as any).whatsapp_phone && (
+                <a
+                  href={`https://wa.me/${((profile as any).whatsapp_phone as string).replace(/\D/g, "")}?text=${encodeURIComponent(`Olá! Acabei de fazer uma reserva na ${profile.arena_name} e quero enviar o comprovante do PIX.`)}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="w-full rounded-xl bg-[#25D366] py-3.5 text-sm font-bold text-white shadow-sm transition-arena hover:brightness-95 flex items-center justify-center gap-2 mb-3"
+                >
+                  <Phone size={16} />
+                  Abrir WhatsApp da arena
+                </a>
+              )}
 
-          {/* STEP: Manual Waiting */}
-          {step === "manual_waiting" && (
-            <motion.div key="manual_waiting" initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: 0.3 }} className="text-center py-16">
-              <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ delay: 0.1, type: "spring", stiffness: 200 }}>
-                <div className="flex h-16 w-16 items-center justify-center rounded-full bg-amber-500/10 mx-auto mb-4">
-                  <Clock size={36} className="text-amber-500" />
-                </div>
-              </motion.div>
-              <h2 className="text-xl font-bold text-foreground">Reserva enviada!</h2>
-              <p className="text-sm text-muted-foreground mt-2 max-w-xs mx-auto">
-                Aguarde a confirmação da arena. Você será notificado via WhatsApp em breve.
-              </p>
               <button
                 onClick={handleNewReservation}
-                className="mt-6 rounded-lg bg-primary px-6 py-2.5 text-sm font-medium text-primary-foreground transition-arena hover:brightness-95"
+                className="w-full rounded-xl border border-border py-3 text-sm font-medium text-muted-foreground hover:bg-subtle transition-arena"
               >
                 Voltar ao início
               </button>
