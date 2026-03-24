@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
-import { Plus, CalendarDays, Clock, ArrowRight, MapPin, ChevronLeft, ChevronRight } from "lucide-react";
+import { Plus, CalendarDays, Clock, ArrowRight, MapPin, ChevronLeft, ChevronRight, Hourglass, Check, X } from "lucide-react";
 import { motion } from "framer-motion";
 
 import NewReservationDialog from "@/components/NewReservationDialog";
@@ -23,6 +23,8 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [extraTimeTarget, setExtraTimeTarget] = useState<Reservation | null>(null);
   const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().split("T")[0]);
+  const [pendingReservations, setPendingReservations] = useState<(Reservation & { court_name?: string })[]>([]);
+  const [confirmingId, setConfirmingId] = useState<string | null>(null);
 
   const today = new Date().toISOString().split("T")[0];
   const selectedDow = new Date(selectedDate + "T12:00").getDay(); // 0=Sun
@@ -46,15 +48,32 @@ export default function DashboardPage() {
 
   const fetchData = async () => {
     if (!user) return;
-    const [courtsRes, reservationsRes, scheduleRes] = await Promise.all([
+    const [courtsRes, reservationsRes, scheduleRes, pendingRes] = await Promise.all([
       supabase.from("courts").select("*").eq("user_id", user.id).eq("active", true),
       supabase.from("reservations").select("*").eq("user_id", user.id).eq("date", selectedDate),
       supabase.from("schedule_configs").select("*").eq("user_id", user.id),
+      supabase.from("reservations").select("*, courts(name)").eq("user_id", user.id).eq("status", "aguardando_confirmacao"),
     ]);
     setCourts(courtsRes.data ?? []);
     setReservations((reservationsRes.data as Reservation[]) ?? []);
     setScheduleConfigs(scheduleRes.data ?? []);
+    const pending = (pendingRes.data ?? []).map((r: any) => ({ ...r, court_name: r.courts?.name }));
+    setPendingReservations(pending);
     setLoading(false);
+  };
+
+  const handleConfirm = async (id: string) => {
+    setConfirmingId(id);
+    await supabase.from("reservations").update({ status: "confirmada" }).eq("id", id);
+    setConfirmingId(null);
+    fetchData();
+  };
+
+  const handleCancel = async (id: string) => {
+    setConfirmingId(id);
+    await supabase.from("reservations").update({ status: "cancelado" }).eq("id", id);
+    setConfirmingId(null);
+    fetchData();
   };
 
   // Auto-encerrar reservations that have passed
@@ -157,6 +176,46 @@ export default function DashboardPage() {
           color="pending"
         />
       </div>
+
+      {/* Pending confirmations */}
+      {pendingReservations.length > 0 && (
+        <div className="mb-6 rounded-2xl border border-amber-200 bg-amber-50 dark:border-amber-900/40 dark:bg-amber-950/20 p-5">
+          <div className="flex items-center gap-2 mb-4">
+            <Hourglass size={15} className="text-amber-600" />
+            <h2 className="text-sm font-bold text-amber-800 dark:text-amber-400">Reservas aguardando confirmação</h2>
+            <span className="ml-auto flex h-5 w-5 items-center justify-center rounded-full bg-amber-500 text-[10px] font-bold text-white">{pendingReservations.length}</span>
+          </div>
+          <div className="flex flex-col gap-3">
+            {pendingReservations.map((r) => (
+              <div key={r.id} className="flex items-center justify-between gap-3 rounded-xl bg-white dark:bg-card border border-amber-100 dark:border-amber-900/30 px-4 py-3">
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-foreground truncate">{r.client_name}</p>
+                  <p className="text-[11px] text-muted-foreground mt-0.5">
+                    {r.sport} • {r.start_time.slice(0,5)}–{r.end_time.slice(0,5)} • {r.court_name ?? "Quadra"}
+                  </p>
+                  <p className="text-[10px] text-muted-foreground">{new Date(r.date + "T12:00").toLocaleDateString("pt-BR", { day: "numeric", month: "short" })}</p>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    onClick={() => handleConfirm(r.id)}
+                    disabled={confirmingId === r.id}
+                    className="flex items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold text-accent-foreground hover:brightness-95 transition-arena disabled:opacity-50"
+                  >
+                    <Check size={12} /> Confirmar
+                  </button>
+                  <button
+                    onClick={() => handleCancel(r.id)}
+                    disabled={confirmingId === r.id}
+                    className="flex items-center gap-1.5 rounded-lg border border-destructive/30 px-3 py-1.5 text-xs font-semibold text-destructive hover:bg-destructive/5 transition-arena disabled:opacity-50"
+                  >
+                    <X size={12} /> Cancelar
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Time Grid */}
       {activeCourts.length === 0 ? (
