@@ -271,7 +271,7 @@ export default function PublicBookingPage() {
       }).select().single();
 
       if (resError) {
-        toast.error("Erro ao realizar reserva.");
+        toast.error(`Erro ao realizar reserva: ${resError.message}`);
         setSubmitting(false);
         return;
       }
@@ -398,7 +398,7 @@ export default function PublicBookingPage() {
     setTermsAccepted(false);
     setPixCode("");
     setPixCopied(false);
-    setManualPixCopied(false);
+
     setPendingReservationId(null);
   };
 
