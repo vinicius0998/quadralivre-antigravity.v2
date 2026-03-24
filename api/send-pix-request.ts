@@ -1,4 +1,10 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
+import { createClient } from "@supabase/supabase-js";
+
+const supabase = createClient(
+  process.env.SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
+);
 
 function detectPixType(key: string): string {
   const digits = key.replace(/\D/g, "");
@@ -18,14 +24,31 @@ function formatPhone(phone: string): string {
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
-  const { clientPhone, amount, pixKey, arenaName, courtName } = req.body;
+  const { clientPhone, amount, pixKey, arenaName, courtName, arenaUserId } = req.body;
 
   if (!clientPhone || !amount || !pixKey) {
     return res.status(400).json({ error: "Missing required fields" });
   }
 
-  const token = process.env.UAZAPI_TOKEN;
-  if (!token) return res.status(500).json({ error: "UAZAPI_TOKEN not configured" });
+  // Buscar o token da instância uazapi da arena específica
+  let token: string | null = null;
+  if (arenaUserId) {
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("uazapi_token")
+      .eq("user_id", arenaUserId)
+      .single();
+    token = profile?.uazapi_token ?? null;
+  }
+
+  // Fallback para o token global da plataforma (legado)
+  if (!token) {
+    token = process.env.UAZAPI_TOKEN ?? null;
+  }
+
+  if (!token) {
+    return res.status(500).json({ error: "Nenhum token WhatsApp configurado" });
+  }
 
   const pixType = detectPixType(pixKey);
   const number = formatPhone(clientPhone);
