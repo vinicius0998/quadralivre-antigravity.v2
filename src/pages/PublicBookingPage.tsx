@@ -61,6 +61,8 @@ export default function PublicBookingPage() {
   const [pixCode, setPixCode] = useState("");
   const [pixCopied, setPixCopied] = useState(false);
   const [manualPixCopied, setManualPixCopied] = useState(false);
+  const [manualAmount, setManualAmount] = useState(0);
+  const [pixRequestSent, setPixRequestSent] = useState(false);
   const [pendingReservationId, setPendingReservationId] = useState<string | null>(null);
 
   // Load arena data
@@ -278,6 +280,26 @@ export default function PublicBookingPage() {
 
       notifyArena("manual");
       setPendingReservationId(reservation.id);
+
+      // Calcular valor e enviar requisição PIX via uazapi
+      const pixAmount = advancePercentage > 0 ? advanceAmount : totalAmount;
+      setManualAmount(pixAmount);
+      if (clientPhone && (profile as any).manual_pix_key) {
+        fetch("/api/send-pix-request", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            clientPhone,
+            amount: pixAmount,
+            pixKey: (profile as any).manual_pix_key,
+            arenaName: profile.arena_name,
+            courtName: selectedCourt.name,
+          }),
+        })
+          .then((r) => r.ok && setPixRequestSent(true))
+          .catch(() => {});
+      }
+
       setSubmitting(false);
       setStep("manual_payment");
       return;
@@ -915,13 +937,19 @@ export default function PublicBookingPage() {
                   <div className="flex justify-between">
                     <span className="text-xs text-muted-foreground">Valor a pagar</span>
                     <span className="text-xs font-bold text-primary">
-                      R$ {(() => {
-                        const total = selectedCourt.price_per_hour * (selectedDuration / 60);
-                        const perc = (profile as any).advance_percentage || 0;
-                        return (perc > 0 ? (total * perc) / 100 : total).toFixed(2).replace(".", ",");
-                      })()}
+                      R$ {manualAmount.toFixed(2).replace(".", ",")}
                     </span>
                   </div>
+                </div>
+              )}
+
+              {/* Aviso WhatsApp PIX */}
+              {pixRequestSent && (
+                <div className="rounded-xl border border-accent/30 bg-accent/5 p-4 mb-4 flex items-start gap-3">
+                  <CheckCircle2 size={16} className="text-accent mt-0.5 shrink-0" />
+                  <p className="text-xs text-accent-foreground leading-relaxed">
+                    Enviamos uma <strong>solicitação de pagamento PIX</strong> no seu WhatsApp com o valor já preenchido. Confirme por lá ou use a chave abaixo.
+                  </p>
                 </div>
               )}
 
