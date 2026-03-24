@@ -53,7 +53,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const pixType = detectPixType(pixKey);
   const text = `Reserva ${courtName || "Quadra"} \u2014 ${arenaName || "Arena"}`;
 
-  console.log(`[send-pix-request] Enviando request-payment para ${number} | valor: ${amount} | pixType: ${pixType}`);
+  console.log(`[send-pix-request] Enviando request-payment para ${number} | valor: ${amount} | pixType: ${pixType} | token: ...${token.slice(-6)}`);
 
   try {
     const response = await fetch("https://genialchat.uazapi.com/send/request-payment", {
@@ -64,11 +64,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        number,          // ex: 5562999878349
-        amount,          // valor num\u00e9rico (ex: 29.90) \u2014 j\u00e1 embutido no QR Code PIX
-        text,            // descri\u00e7\u00e3o exibida no WhatsApp
-        pixKey,          // chave PIX da arena
-        pixType,         // CPF | CNPJ | EMAIL | PHONE | EVP (detectado automaticamente)
+        number,
+        amount,
+        text,
+        pixKey,
+        pixType,
       }),
     });
 
@@ -80,7 +80,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     console.log("[send-pix-request] PIX enviado com sucesso!", JSON.stringify(result));
-    return res.status(200).json({ success: true });
+    return res.status(200).json({ success: true, uazapi: result });
   } catch (error: any) {
     console.error("[send-pix-request] Exception:", error.message);
     return res.status(500).json({ error: "Erro na comunica\u00e7\u00e3o com API WhatsApp" });
