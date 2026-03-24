@@ -21,19 +21,27 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     .eq("user_id", user.id)
     .single();
 
-  if (!profile?.uazapi_token) {
-    return res.status(400).json({ error: "Nenhuma instância encontrada" });
+  // Se não tem instância, apenas limpa o banco (idempotente)
+  if (profile?.uazapi_token) {
+    // Tenta deletar a instância na uazapi (ignora erros)
+    try {
+      await fetch("https://genialchat.uazapi.com/instance/delete", {
+        method: "DELETE",
+        headers: {
+          Accept: "application/json",
+          token: profile.uazapi_token,
+        },
+      });
+    } catch (e) {
+      console.warn("[whatsapp-disconnect] Erro ao deletar instância uazapi:", e);
+    }
   }
 
-  const response = await fetch("https://genialchat.uazapi.com/instance/disconnect", {
-    method: "POST",
-    headers: {
-      Accept: "application/json",
-      token: profile.uazapi_token,
-    },
-  });
+  // Limpa token e nome da instância no banco
+  await supabase
+    .from("profiles")
+    .update({ uazapi_token: null, uazapi_instance_name: null })
+    .eq("user_id", user.id);
 
-  const result = await response.json().catch(() => ({}));
-
-  return res.status(200).json({ success: true, raw: result });
+  return res.status(200).json({ success: true });
 }

@@ -3,7 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { Tables } from "@/integrations/supabase/types";
 import { toast } from "sonner";
-import { Loader2, Copy, ExternalLink, Upload, X, ImageIcon, Building2, Globe, Phone, Banknote, Wallet, Zap, HandCoins, Ban, MessageCircle, Wifi, WifiOff, QrCode, RefreshCw } from "lucide-react";
+import { Loader2, Copy, ExternalLink, Upload, X, ImageIcon, Building2, Globe, Phone, Banknote, Wallet, Zap, HandCoins, Ban, MessageCircle, Wifi, WifiOff, QrCode, RefreshCw, CheckCircle2 } from "lucide-react";
 
 type Profile = Tables<"profiles">;
 
@@ -65,6 +65,13 @@ export default function SettingsPage() {
     return { Authorization: `Bearer ${data.session?.access_token}` };
   };
 
+  const stopPolling = () => {
+    if (waPollingRef.current) {
+      clearInterval(waPollingRef.current);
+      waPollingRef.current = null;
+    }
+  };
+
   const fetchWaStatus = async () => {
     const headers = await getAuthHeader();
     const res = await fetch("/api/whatsapp-status", { headers });
@@ -73,9 +80,9 @@ export default function SettingsPage() {
     const isNowConnected = data.connected;
     setWaStatus(isNowConnected ? "connected" : data.status === "no_instance" ? "no_instance" : "disconnected");
     setWaPhone(data.phone || null);
-    if (isNowConnected && waPollingRef.current) {
-      clearInterval(waPollingRef.current);
-      waPollingRef.current = null;
+    if (isNowConnected) {
+      // Para o polling e limpa o QR Code quando conectado
+      stopPolling();
       setWaQrCode(null);
       toast.success("✅ WhatsApp conectado com sucesso!");
     }
@@ -84,10 +91,15 @@ export default function SettingsPage() {
   const handleWaConnect = async () => {
     setWaLoading(true);
     setWaQrCode(null);
+    setWaStatus("unknown");
+    stopPolling();
     try {
       const headers = await getAuthHeader();
 
-      // 1. Criar instância se não existir
+      // 1. Garante instância fresca: desconecta/deleta a anterior se existir
+      await fetch("/api/whatsapp-disconnect", { method: "POST", headers });
+
+      // 2. Cria nova instância
       const createRes = await fetch("/api/whatsapp-create-instance", { method: "POST", headers });
       if (!createRes.ok) {
         const err = await createRes.json();
@@ -95,7 +107,7 @@ export default function SettingsPage() {
         return;
       }
 
-      // 2. Conectar e obter QR Code
+      // 3. Obtendo QR Code
       const connectRes = await fetch("/api/whatsapp-connect", {
         method: "POST",
         headers: { ...headers, "Content-Type": "application/json" },
@@ -105,8 +117,10 @@ export default function SettingsPage() {
       const qr = connectData.qrcode || connectData.qr || connectData.QRCode || connectData.base64;
       if (qr) {
         setWaQrCode(qr.startsWith("data:") ? qr : `data:image/png;base64,${qr}`);
+        setWaStatus("disconnected");
       } else if (connectData.status === "open" || connectData.connected) {
         setWaStatus("connected");
+        setWaQrCode(null);
         toast.success("WhatsApp já está conectado!");
         return;
       } else {
@@ -115,9 +129,7 @@ export default function SettingsPage() {
         return;
       }
 
-      // 3. Polling para detectar conexão — verifica imediatamente e depois a cada 1,5s
-      if (waPollingRef.current) clearInterval(waPollingRef.current);
-      // Primeira verificação após 2s (tempo para o WA processar o scan)
+      // 4. Polling para detectar a conexão após scan
       setTimeout(fetchWaStatus, 2000);
       waPollingRef.current = setInterval(fetchWaStatus, 1500);
     } finally {
@@ -127,14 +139,15 @@ export default function SettingsPage() {
 
   const handleWaDisconnect = async () => {
     setWaLoading(true);
+    stopPolling();
     try {
       const headers = await getAuthHeader();
+      // Deleta a instância na uazapi e limpa o banco
       await fetch("/api/whatsapp-disconnect", { method: "POST", headers });
-      setWaStatus("disconnected");
+      setWaStatus("no_instance");
       setWaQrCode(null);
       setWaPhone(null);
-      if (waPollingRef.current) { clearInterval(waPollingRef.current); waPollingRef.current = null; }
-      toast.success("WhatsApp desconectado.");
+      toast.success("WhatsApp desconectado e instância removida.");
     } finally {
       setWaLoading(false);
     }
@@ -142,7 +155,7 @@ export default function SettingsPage() {
 
   useEffect(() => {
     if (user) fetchWaStatus();
-    return () => { if (waPollingRef.current) clearInterval(waPollingRef.current); };
+    return () => stopPolling();
   }, [user]);
 
   const handleUploadImage = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -186,7 +199,6 @@ export default function SettingsPage() {
     } as any;
 
     let error;
-    
     if (profile?.id) {
       const res = await supabase.from("profiles").update(payload).eq("id", profile.id);
       error = res.error;
@@ -194,9 +206,7 @@ export default function SettingsPage() {
       const res = await supabase.from("profiles").upsert(payload, { onConflict: "user_id" });
       error = res.error;
     }
-
     setSaving(false);
-    
     if (error) { 
       console.error("Erro no save (profiles):", error);
       if (error.message?.includes("duplicate")) {
@@ -206,7 +216,6 @@ export default function SettingsPage() {
       }
       return; 
     }
-    
     setArenaSlug(slug);
     toast.success("Configurações salvas!");
   };
@@ -222,7 +231,6 @@ export default function SettingsPage() {
     const { data: sessionData } = await supabase.auth.getSession();
     const token = sessionData?.session?.access_token;
     if (!token) { toast.error("Sessão expirada. Faça login novamente."); setWithdrawing(false); return; }
-
     const response = await fetch("/api/create-withdrawal", {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
@@ -261,21 +269,14 @@ export default function SettingsPage() {
           {bannerUrl ? (
             <div className="relative rounded-xl overflow-hidden ring-1 ring-border">
               <img src={bannerUrl} alt="Banner da arena" className="w-full h-48 object-cover" />
-              <button
-                type="button"
-                onClick={handleRemoveImage}
-                className="absolute top-3 right-3 flex h-8 w-8 items-center justify-center rounded-xl bg-card/90 text-foreground hover:bg-destructive hover:text-destructive-foreground transition-arena backdrop-blur-sm shadow-sm"
-              >
+              <button type="button" onClick={handleRemoveImage}
+                className="absolute top-3 right-3 flex h-8 w-8 items-center justify-center rounded-xl bg-card/90 text-foreground hover:bg-destructive hover:text-destructive-foreground transition-arena backdrop-blur-sm shadow-sm">
                 <X size={16} />
               </button>
             </div>
           ) : (
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              disabled={uploading}
-              className="w-full flex flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed border-border py-12 text-muted-foreground hover:border-primary hover:text-primary transition-arena cursor-pointer"
-            >
+            <button type="button" onClick={() => fileInputRef.current?.click()} disabled={uploading}
+              className="w-full flex flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed border-border py-12 text-muted-foreground hover:border-primary hover:text-primary transition-arena cursor-pointer">
               {uploading ? <Loader2 size={28} className="animate-spin" /> : (
                 <>
                   <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10">
@@ -291,12 +292,8 @@ export default function SettingsPage() {
           )}
           <input ref={fileInputRef} type="file" accept="image/*" onChange={handleUploadImage} className="hidden" />
           {bannerUrl && (
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              disabled={uploading}
-              className="flex items-center gap-1.5 text-xs text-primary font-semibold hover:underline mt-3"
-            >
+            <button type="button" onClick={() => fileInputRef.current?.click()} disabled={uploading}
+              className="flex items-center gap-1.5 text-xs text-primary font-semibold hover:underline mt-3">
               {uploading ? <Loader2 size={12} className="animate-spin" /> : <Upload size={12} />}
               Trocar imagem
             </button>
@@ -349,13 +346,9 @@ export default function SettingsPage() {
             <label className="text-xs font-medium text-foreground">Limite de antecedência (horas)</label>
             <p className="text-[11px] text-muted-foreground mb-2">Quantas horas antes do início o cliente PODE cancelar a reserva.</p>
             <div className="flex items-center gap-3">
-              <input
-                type="number"
-                min="0"
-                value={cancellationLimit}
+              <input type="number" min="0" value={cancellationLimit}
                 onChange={(e) => setCancellationLimit(Number(e.target.value))}
-                className={`${inputClass} max-w-[120px]`}
-              />
+                className={`${inputClass} max-w-[120px]`} />
               <span className="text-sm text-foreground font-medium">horas</span>
             </div>
             <p className="text-[10px] text-muted-foreground mt-1">Ex: Se definir 2 horas, o cliente não poderá cancelar se faltar menos de 2h para a reserva.</p>
@@ -368,7 +361,6 @@ export default function SettingsPage() {
             <Banknote size={16} className="text-primary" />
             <h2 className="text-sm font-bold text-foreground">Pagamentos</h2>
           </div>
-
           <div className="space-y-2">
             <label className="text-xs font-medium text-foreground">Método de pagamento</label>
             <div className="flex flex-col gap-2">
@@ -377,16 +369,10 @@ export default function SettingsPage() {
                 { value: "manual", icon: HandCoins, label: "Manual (Pix direto da arena)", desc: "O cliente recebe sua chave Pix e confirma o pagamento manualmente." },
                 { value: "automatic", icon: Zap, label: "Automático", desc: "Cobrança automática via PIX QR Code gerado na hora." },
               ] as const).map(({ value, icon: Icon, label, desc }) => (
-                <button
-                  key={value}
-                  type="button"
-                  onClick={() => setPaymentMethod(value)}
+                <button key={value} type="button" onClick={() => setPaymentMethod(value)}
                   className={`flex items-center gap-3 rounded-xl border-2 p-4 text-left transition-arena ${
-                    paymentMethod === value
-                      ? "border-primary bg-primary/5"
-                      : "border-border bg-subtle hover:border-primary/30"
-                  }`}
-                >
+                    paymentMethod === value ? "border-primary bg-primary/5" : "border-border bg-subtle hover:border-primary/30"
+                  }`}>
                   <div className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2 ${paymentMethod === value ? "border-primary" : "border-border"}`}>
                     {paymentMethod === value && <div className="h-2 w-2 rounded-full bg-primary" />}
                   </div>
@@ -399,86 +385,79 @@ export default function SettingsPage() {
               ))}
             </div>
           </div>
-
           {paymentMethod === "manual" && (
             <div className="space-y-3 rounded-xl border border-accent/20 bg-accent/5 p-4">
               <p className="text-[11px] text-muted-foreground">O cliente verá essas informações ao reservar e fará o PIX diretamente para você.</p>
               <div className="space-y-1.5">
                 <label className="text-xs font-medium text-foreground">Chave PIX da arena *</label>
-                <input
-                  type="text"
-                  placeholder="CPF, CNPJ, e-mail, telefone ou chave aleatória"
-                  value={manualPixKey}
-                  onChange={(e) => setManualPixKey(e.target.value)}
-                  className={inputClass}
-                />
+                <input type="text" placeholder="CPF, CNPJ, e-mail, telefone ou chave aleatória"
+                  value={manualPixKey} onChange={(e) => setManualPixKey(e.target.value)} className={inputClass} />
               </div>
               <div className="space-y-1.5">
                 <label className="text-xs font-medium text-foreground">Nome do recebedor *</label>
-                <input
-                  type="text"
-                  placeholder="Nome que aparece no PIX"
-                  value={manualPixReceiverName}
-                  onChange={(e) => setManualPixReceiverName(e.target.value)}
-                  className={inputClass}
-                />
+                <input type="text" placeholder="Nome que aparece no PIX"
+                  value={manualPixReceiverName} onChange={(e) => setManualPixReceiverName(e.target.value)} className={inputClass} />
               </div>
             </div>
           )}
-
           <div className="space-y-1.5">
             <label className="text-xs font-medium text-foreground">Percentual cobrado no ato da reserva (%)</label>
             <p className="text-[11px] text-muted-foreground">Quanto do valor total o cliente paga ao reservar. Use 0 para desativar o pagamento antecipado.</p>
             <div className="flex items-center gap-3 mt-2">
-              <input
-                type="number"
-                min="0"
-                max="100"
-                value={advancePercentage}
+              <input type="number" min="0" max="100" value={advancePercentage}
                 onChange={(e) => setAdvancePercentage(Number(e.target.value))}
-                className={`${inputClass} max-w-[120px]`}
-              />
+                className={`${inputClass} max-w-[120px]`} />
               <span className="text-sm text-foreground font-medium">%</span>
             </div>
             <p className="text-[10px] text-muted-foreground">Ex: 30% → cliente paga R$ 30 numa reserva de R$ 100. Use 100 para cobrar o valor total.</p>
           </div>
-
           <div className="space-y-1.5">
             <label className="text-xs font-medium text-foreground">Chave PIX para saques</label>
-            <p className="text-[11px] text-muted-foreground">Chave PIX onde você receberá os saques do seu saldo na plataforma (CPF, CNPJ, e-mail, telefone ou chave aleatória).</p>
-            <input
-              type="text"
-              placeholder="Sua chave PIX"
-              value={pixKey}
-              onChange={(e) => setPixKey(e.target.value)}
-              className={`${inputClass} mt-2`}
-            />
+            <p className="text-[11px] text-muted-foreground">Chave PIX onde você receberá os saques do seu saldo na plataforma.</p>
+            <input type="text" placeholder="Sua chave PIX" value={pixKey}
+              onChange={(e) => setPixKey(e.target.value)} className={`${inputClass} mt-2`} />
           </div>
         </div>
 
         {/* WhatsApp */}
         <div className="md:col-span-2 rounded-2xl bg-card p-6 shadow-card space-y-4">
-          <div className="flex items-center justify-between mb-1">
-            <div className="flex items-center gap-2">
-              <MessageCircle size={16} className="text-[#25D366]" />
-              <h2 className="text-sm font-bold text-foreground">WhatsApp da Arena</h2>
-            </div>
-            {waStatus === "connected" && (
-              <span className="flex items-center gap-1.5 rounded-full bg-[#25D366]/10 px-2.5 py-1 text-[11px] font-semibold text-[#25D366]">
-                <Wifi size={11} /> Conectado{waPhone ? ` · ${waPhone}` : ""}
-              </span>
-            )}
-            {waStatus === "disconnected" && (
-              <span className="flex items-center gap-1.5 rounded-full bg-destructive/10 px-2.5 py-1 text-[11px] font-semibold text-destructive">
-                <WifiOff size={11} /> Desconectado
-              </span>
-            )}
+          <div className="flex items-center gap-2 mb-1">
+            <MessageCircle size={16} className="text-[#25D366]" />
+            <h2 className="text-sm font-bold text-foreground">WhatsApp da Arena</h2>
           </div>
 
           <p className="text-[11px] text-muted-foreground">
             Conecte o WhatsApp da arena para enviar notificações de reserva diretamente pela sua conta.
           </p>
 
+          {/* Estado: CONECTADO */}
+          {waStatus === "connected" && (
+            <div className="rounded-xl border-2 border-[#25D366]/30 bg-[#25D366]/5 p-5 flex flex-col gap-4">
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[#25D366]/15">
+                  <CheckCircle2 size={22} className="text-[#25D366]" />
+                </div>
+                <div>
+                  <p className="text-sm font-bold text-foreground">WhatsApp Conectado</p>
+                  {waPhone && <p className="text-[11px] text-muted-foreground mt-0.5">{waPhone}</p>}
+                </div>
+                <span className="ml-auto flex items-center gap-1.5 rounded-full bg-[#25D366]/10 px-2.5 py-1 text-[11px] font-semibold text-[#25D366]">
+                  <Wifi size={11} /> Online
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={handleWaDisconnect}
+                disabled={waLoading}
+                className="flex w-full items-center justify-center gap-2 rounded-xl bg-destructive py-3 text-sm font-bold text-white shadow-sm transition-arena hover:brightness-90 disabled:opacity-50"
+              >
+                {waLoading ? <Loader2 size={15} className="animate-spin" /> : <WifiOff size={15} />}
+                Desconectar e remover instância
+              </button>
+            </div>
+          )}
+
+          {/* QR Code aguardando scan */}
           {waQrCode && waStatus !== "connected" && (
             <div className="flex flex-col items-center gap-3 rounded-xl border border-border bg-subtle p-5">
               <div className="flex items-center gap-2 text-xs font-medium text-foreground">
@@ -492,25 +471,16 @@ export default function SettingsPage() {
             </div>
           )}
 
-          {waStatus === "connected" ? (
-            <button
-              type="button"
-              onClick={handleWaDisconnect}
-              disabled={waLoading}
-              className="flex items-center gap-2 rounded-xl border border-destructive/30 px-5 py-2.5 text-sm font-semibold text-destructive hover:bg-destructive/5 transition-arena disabled:opacity-50"
-            >
-              {waLoading ? <Loader2 size={15} className="animate-spin" /> : <WifiOff size={15} />}
-              Desconectar WhatsApp
-            </button>
-          ) : (
+          {/* Botão conectar (quando não está conectado) */}
+          {waStatus !== "connected" && (
             <button
               type="button"
               onClick={handleWaConnect}
-              disabled={waLoading || waStatus === "unknown"}
+              disabled={waLoading}
               className="flex items-center gap-2 rounded-xl bg-[#25D366] px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition-arena hover:brightness-95 disabled:opacity-50"
             >
               {waLoading ? <Loader2 size={15} className="animate-spin" /> : <MessageCircle size={15} />}
-              {waQrCode ? "Recarregar QR Code" : "Conectar WhatsApp"}
+              {waQrCode ? "Gerar novo QR Code" : "Conectar WhatsApp"}
             </button>
           )}
         </div>
@@ -536,22 +506,12 @@ export default function SettingsPage() {
               <div className="flex items-center gap-3">
                 <div className="relative flex-1 max-w-[200px]">
                   <span className="absolute left-4 top-1/2 -translate-y-1/2 text-sm text-muted-foreground font-medium">R$</span>
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    placeholder="0,00"
-                    value={withdrawAmount}
-                    onChange={(e) => setWithdrawAmount(e.target.value)}
-                    className={`${inputClass} pl-10`}
-                  />
+                  <input type="number" min="0" step="0.01" placeholder="0,00" value={withdrawAmount}
+                    onChange={(e) => setWithdrawAmount(e.target.value)} className={`${inputClass} pl-10`} />
                 </div>
-                <button
-                  type="button"
-                  onClick={handleWithdraw}
+                <button type="button" onClick={handleWithdraw}
                   disabled={withdrawing || !withdrawAmount || balanceCents === 0}
-                  className="flex items-center gap-2 rounded-xl bg-accent px-5 py-3 text-sm font-semibold text-accent-foreground shadow-sm transition-arena hover:brightness-95 disabled:opacity-50"
-                >
+                  className="flex items-center gap-2 rounded-xl bg-accent px-5 py-3 text-sm font-semibold text-accent-foreground shadow-sm transition-arena hover:brightness-95 disabled:opacity-50">
                   {withdrawing ? <Loader2 size={16} className="animate-spin" /> : <Banknote size={16} />}
                   Sacar
                 </button>
@@ -571,30 +531,16 @@ export default function SettingsPage() {
             </div>
             <p className="text-xs text-muted-foreground mb-3">Envie este link para seus clientes reservarem horários.</p>
             <div className="flex items-center gap-2">
-              <input
-                type="text"
-                readOnly
-                value={`${window.location.origin}/reservar/${arenaSlug}`}
+              <input type="text" readOnly value={`${window.location.origin}/reservar/${arenaSlug}`}
                 className="flex-1 rounded-xl border-0 bg-card px-4 py-3 text-sm text-foreground ring-1 ring-inset ring-border outline-none select-all font-medium"
-                onFocus={(e) => e.target.select()}
-              />
-              <button
-                type="button"
-                onClick={() => {
-                  navigator.clipboard.writeText(`${window.location.origin}/reservar/${arenaSlug}`);
-                  toast.success("Link copiado!");
-                }}
-                className="flex h-11 items-center gap-2 rounded-xl gradient-primary px-4 text-sm font-semibold text-primary-foreground shadow-md shadow-primary/20 transition-arena hover:shadow-lg shrink-0"
-              >
+                onFocus={(e) => e.target.select()} />
+              <button type="button" onClick={() => { navigator.clipboard.writeText(`${window.location.origin}/reservar/${arenaSlug}`); toast.success("Link copiado!"); }}
+                className="flex h-11 items-center gap-2 rounded-xl gradient-primary px-4 text-sm font-semibold text-primary-foreground shadow-md shadow-primary/20 transition-arena hover:shadow-lg shrink-0">
                 <Copy size={16} />
                 Copiar
               </button>
-              <a
-                href={`/reservar/${arenaSlug}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-card text-muted-foreground hover:text-foreground transition-arena ring-1 ring-inset ring-border"
-              >
+              <a href={`/reservar/${arenaSlug}`} target="_blank" rel="noopener noreferrer"
+                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-card text-muted-foreground hover:text-foreground transition-arena ring-1 ring-inset ring-border">
                 <ExternalLink size={16} />
               </a>
             </div>
@@ -603,11 +549,8 @@ export default function SettingsPage() {
 
         {/* Save */}
         <div className="md:col-span-2">
-          <button
-            onClick={handleSave}
-            disabled={saving}
-            className="rounded-xl gradient-primary px-6 py-3 text-sm font-semibold text-primary-foreground shadow-md shadow-primary/20 transition-arena hover:shadow-lg disabled:opacity-50"
-          >
+          <button onClick={handleSave} disabled={saving}
+            className="rounded-xl gradient-primary px-6 py-3 text-sm font-semibold text-primary-foreground shadow-md shadow-primary/20 transition-arena hover:shadow-lg disabled:opacity-50">
             {saving ? <Loader2 size={16} className="animate-spin" /> : "Salvar Configurações"}
           </button>
         </div>
