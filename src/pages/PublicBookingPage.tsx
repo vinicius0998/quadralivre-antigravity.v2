@@ -93,6 +93,8 @@ export default function PublicBookingPage() {
     const dateFormatted = new Date(selectedDate + "T12:00").toLocaleDateString("pt-BR", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
     const paymentLabel = paymentMethodUsed === "manual" ? "PIX direto — aguardando comprovante" : paymentMethodUsed === "automatic" ? "PIX automático" : "Sem cobrança antecipada";
     const message = `🏟️ *Nova Reserva — ${profile.arena_name}*\n\n👤 *Cliente:* ${clientName}\n📞 *Telefone:* ${clientPhone || "Não informado"}\n\n🎾 *Esporte:* ${selectedSport || getCourtSports(selectedCourt)[0] || "Beach Tennis"}\n🏟️ *Quadra:* ${selectedCourt.name}\n📅 *Data:* ${dateFormatted}\n⏰ *Horário:* ${selectedSlot.slice(0, 5)} às ${endTime.slice(0, 5)}\n\n💳 *Pagamento:* ${paymentLabel}\n\n_Reserva realizada via QuadraLivre_ ✅`;
+    const cleanPhone = clientPhone.replace(/\D/g, "");
+    
     fetch("https://n8n.loopwise.com.br/webhook/notification-quadralivre", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -100,7 +102,8 @@ export default function PublicBookingPage() {
         arena_name: profile.arena_name,
         arena_whatsapp: (profile as any).whatsapp_phone ? "+55" + (profile as any).whatsapp_phone.replace(/\D/g, "") : null,
         client_name: clientName,
-        client_phone: clientPhone ? "+55" + clientPhone.replace(/\D/g, "") : null,
+        client_phone: cleanPhone ? "+55" + cleanPhone : null,
+        client_whatsapp_link: cleanPhone ? `https://wa.me/55${cleanPhone}` : null,
         court_name: selectedCourt.name,
         date: dateFormatted,
         start_time: selectedSlot.slice(0, 5),
