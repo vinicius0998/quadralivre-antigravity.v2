@@ -151,7 +151,7 @@ export default function PublicBookingPage() {
           pixKey: profile.pix_key,
           pixType: profile.pix_type,
           token: (profile as any).uazapi_token,
-          instance: (profile as any).uazapi_instance
+          instance: (profile as any).uazapi_instance_name
         })
       });
       console.log("[PIX WhatsApp] Status:", rawRes.status);
